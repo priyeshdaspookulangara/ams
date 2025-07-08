@@ -116,12 +116,15 @@ $sql_students_new = "CREATE TABLE IF NOT EXISTS students (
     name VARCHAR(255) NOT NULL,
     roll_number VARCHAR(50) NOT NULL, -- Roll number might now be unique PER class_section, not globally
     class_section_id INT NULL, -- This student belongs to which specific class section
+    date_of_birth DATE NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL, -- If class section is deleted
     -- Consider UNIQUE KEY (roll_number, class_section_id) if roll numbers are per-class
     CONSTRAINT fk_student_class_section FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL
 )";
 // Note: The foreign key from students to class_sections is added *after* class_sections table is created.
+
+$sql_alter_students_add_dob = "ALTER TABLE students ADD COLUMN date_of_birth DATE NULL AFTER class_section_id";
 
 $sql_teacher_delegations = "CREATE TABLE IF NOT EXISTS teacher_delegations (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -300,6 +303,58 @@ if ($result_settings && mysqli_num_rows($result_settings) == 0) {
 } else {
     echo "Settings row (id=1) already exists.<br>";
 }
+
+// Check and insert default settings (idempotent)
+// (Code for settings and admin user insertion remains the same as before)
+$check_settings_exist = "SELECT id FROM settings WHERE id = 1";
+$result_settings = mysqli_query($conn, $check_settings_exist);
+if ($result_settings && mysqli_num_rows($result_settings) == 0) {
+    $default_template_single = "Dear {parent_name}, {student_name} (Roll No: {student_rollnumber}) was absent on {current_date}. Contact office: {office_number}.";
+    $default_template_multiple = "Dear {parent_name}, {student_name} (Roll No: {student_rollnumber}) has been absent for {consecutive_days} days, including today ({current_date}). Please contact office: {office_number} urgently.";
+    $default_office_number = "123-456-7890";
+    $escaped_template_single = mysqli_real_escape_string($conn, $default_template_single);
+    $escaped_template_multiple = mysqli_real_escape_string($conn, $default_template_multiple);
+    $escaped_office_number = mysqli_real_escape_string($conn, $default_office_number);
+    $insert_default_settings = "INSERT INTO settings (id, notification_type, sms_template_single_absence, sms_template_multiple_absences, consecutive_absence_threshold, office_number)
+                                VALUES (1, 'none', '$escaped_template_single', '$escaped_template_multiple', 3, '$escaped_office_number')";
+    if (mysqli_query($conn, $insert_default_settings)) {
+        echo "Default settings inserted successfully.<br>";
+    } else {
+        echo "Error inserting default settings: " . mysqli_error($conn) . "<br>";
+    }
+} else if (!$result_settings) {
+    echo "Error checking for existing settings: " . mysqli_error($conn) . "<br>";
+} else {
+    echo "Settings row (id=1) already exists.<br>";
+}
+
+// Ensure 'date_of_birth' column exists in 'students' table after potential recreation
+$check_dob_column_sql = "SHOW COLUMNS FROM students LIKE 'date_of_birth'";
+$res_dob_column = mysqli_query($conn, $check_dob_column_sql);
+if ($res_dob_column && mysqli_num_rows($res_dob_column) == 0) {
+    echo "Attempting to add 'date_of_birth' column to 'students' table...<br>";
+    // Check if class_section_id exists to place it after, otherwise just add
+    $check_cs_id_column_sql = "SHOW COLUMNS FROM students LIKE 'class_section_id'";
+    $res_cs_id_column = mysqli_query($conn, $check_cs_id_column_sql);
+    $alter_dob_sql = "";
+    if ($res_cs_id_column && mysqli_num_rows($res_cs_id_column) > 0) {
+        $alter_dob_sql = "ALTER TABLE students ADD COLUMN date_of_birth DATE NULL AFTER class_section_id";
+    } else { // Should not happen if new schema is created, but as a fallback
+        $alter_dob_sql = "ALTER TABLE students ADD COLUMN date_of_birth DATE NULL";
+    }
+
+    if (mysqli_query($conn, $alter_dob_sql)) {
+        echo "'date_of_birth' column added successfully to 'students' table.<br>";
+    } else {
+        echo "Error adding 'date_of_birth' column to 'students' table: " . mysqli_error($conn) . "<br>";
+    }
+} else if ($res_dob_column && mysqli_num_rows($res_dob_column) > 0) {
+    echo "'date_of_birth' column already exists in 'students' table.<br>";
+} else if (!$res_dob_column) {
+    echo "Error checking for 'date_of_birth' column: " . mysqli_error($conn) . "<br>";
+}
+echo "<hr>";
+
 
 // Check and insert a default admin user if no users exist (idempotent)
 $check_users_exist = "SELECT id FROM users WHERE username = 'admin' LIMIT 1"; // More specific check

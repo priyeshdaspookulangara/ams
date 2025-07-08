@@ -104,27 +104,47 @@ if ($result && mysqli_num_rows($result) > 0) {
     </style>
 </head>
 <body>
-    <nav class="top-nav">
+    <nav class="top-nav no-print">
         <a href="index.php">Home</a>
         <?php if (is_logged_in()): ?>
             <?php if (in_array(current_user_role(), ['admin', 'teacher'])): ?>
                 <a href="students.php">Manage Students</a>
                 <a href="attendance.php">Take/View Attendance</a>
+                <div style="display:inline-block; position:relative;" class="nav-dropdown-container">
+                    <a href="#">Reports &#9662;</a>
+                    <div style="position:absolute; background-color:#333; display:none; min-width:160px; box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2); z-index:1;" class="dropdown-content">
+                        <a href="reports_student_master.php" style="display:block; padding:8px 10px; text-align:left;">Student Master List</a>
+                        <a href="reports_enrollment_summary.php" style="display:block; padding:8px 10px; text-align:left;">Enrollment Summary</a>
+                        <!-- More reports here -->
+                    </div>
+                </div>
             <?php endif; ?>
             <?php if (current_user_role() == 'admin'): ?>
                 <a href="settings.php">Settings</a>
-                <a href="manage_users.php">Manage Users</a> <!-- New page to be created -->
+                <a href="manage_users.php">Manage Users</a>
+                <a href="manage_grades.php">Manage Grades</a>
+                <a href="manage_divisions.php">Manage Divisions</a>
+                <a href="manage_class_sections.php">Manage Class Sections</a>
+                <a href="delegate_tasks.php">Delegate Tasks</a>
+            <?php elseif (current_user_role() == 'teacher'): ?>
+                <a href="delegate_tasks.php">Delegate Tasks</a>
             <?php endif; ?>
             <?php if (current_user_role() == 'parent'): ?>
-                <a href="parent_dashboard.php">Parent Dashboard</a> <!-- New page to be created -->
+                <a href="parent_dashboard.php">Parent Dashboard</a>
             <?php endif; ?>
-            <span class="user-info" style="float: right; color: #ddd; font-size: 0.9em; margin-right: 20px; line-height: 2.5em;">Logged in as: <?php echo htmlspecialchars(current_username()); ?> (<?php echo htmlspecialchars(current_user_role()); ?>)</span>
+            <span class="user-info">Logged in as: <?php echo htmlspecialchars(current_username()); ?> (<?php echo htmlspecialchars(current_user_role()); ?>)</span>
             <a href="logout.php" style="float:right;">Logout</a>
         <?php else: ?>
             <a href="login.php">Login</a>
             <a href="register.php">Register (Teacher)</a>
         <?php endif; ?>
     </nav>
+    <script> // Simple dropdown for nav - ensure this script is present or moved to a global JS
+        document.querySelectorAll('.nav-dropdown-container').forEach(item => {
+            item.addEventListener('mouseover', () => { item.querySelector('.dropdown-content').style.display = 'block'; });
+            item.addEventListener('mouseout', () => { item.querySelector('.dropdown-content').style.display = 'none'; });
+        });
+    </script>
     <div class="container">
         <h1>Application Settings</h1>
 

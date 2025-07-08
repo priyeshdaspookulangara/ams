@@ -50,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_student'])) {
         $name = mysqli_real_escape_string($conn, $_POST['name']);
         $roll_number = mysqli_real_escape_string($conn, $_POST['roll_number']);
         $class_section_id_posted = (int)$_POST['class_section_id'];
+        $date_of_birth = !empty($_POST['date_of_birth']) ? mysqli_real_escape_string($conn, $_POST['date_of_birth']) : NULL;
 
         $can_add_to_section = false;
         if ($current_role == 'admin') {
@@ -74,7 +75,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_student'])) {
                 $message = "Error: Roll number '$roll_number' already exists in this class section.";
                 $message_type = 'error';
             } else {
-                $insert_sql = "INSERT INTO students (name, roll_number, class_section_id) VALUES ('$name', '$roll_number', $class_section_id_posted)";
+                $dob_sql_val = $date_of_birth ? "'$date_of_birth'" : "NULL";
+                $insert_sql = "INSERT INTO students (name, roll_number, class_section_id, date_of_birth) VALUES ('$name', '$roll_number', $class_section_id_posted, $dob_sql_val)";
                 if (mysqli_query($conn, $insert_sql)) {
                     $message = "Student '$name' added successfully.";
                     $message_type = 'success';
@@ -215,6 +217,10 @@ if($students_result){
                         </option>
                     <?php endforeach; ?>
                 </select>
+
+                <label for="date_of_birth">Date of Birth (Optional):</label>
+                <input type="date" name="date_of_birth" id="date_of_birth" style="width: auto; padding: 9px;">
+
                 <input type="submit" name="add_student" value="Add Student">
             </form>
         </div>
