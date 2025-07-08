@@ -142,4 +142,78 @@ function check_consecutive_absences($student_id, $current_attendance_date_str, $
     }
     return $consecutive_days;
 }
+
+// --- PHPMailer Integration for Email Notifications ---
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
+use PHPMailer\PHPMailer\Exception;
+
+// Function to send email notifications
+function send_email_notification($to_email, $to_name, $subject, $html_body) {
+    // Ensure PHPMailer classes are loaded.
+    // This might require explicit require_once if not using an autoloader.
+    // Assuming files are in lib/PHPMailer/src/
+    $phpmailer_base_path = __DIR__ . '/../lib/PHPMailer/'; // Adjust if functions.php moves
+    if (!class_exists(PHPMailer::class)) { // Check if already loaded
+        require_once $phpmailer_base_path . 'Exception.php';
+        require_once $phpmailer_base_path . 'PHPMailer.php';
+        require_once $phpmailer_base_path . 'SMTP.php';
+    }
+
+    $mail = new PHPMailer(true); // Passing `true` enables exceptions
+
+    $log_prefix = "[" . date("Y-m-d H:i:s") . "] [Email] ";
+    $detailed_log_message = "To: " . htmlspecialchars($to_email) . " | Subject: " . htmlspecialchars($subject) . "\n";
+
+    // Check if SMTP credentials are set and not placeholders
+    if (!defined('SMTP_HOST') || SMTP_HOST === 'smtp.example.com' || empty(SMTP_HOST) ||
+        !defined('SMTP_USERNAME') || SMTP_USERNAME === 'your_email@example.com' ||
+        !defined('SMTP_PASSWORD') || SMTP_PASSWORD === 'your_smtp_password' ||
+        !defined('EMAIL_FROM_ADDRESS') || EMAIL_FROM_ADDRESS === 'noreply@yourschoolattendance.com') {
+
+        $detailed_log_message .= "Status: SKIPPED (SMTP settings not fully configured - using placeholder log)\n";
+        if (!isset($_SESSION['notification_log'])) $_SESSION['notification_log'] = [];
+        $_SESSION['notification_log'][] = nl2br($log_prefix . "Email (Placeholder - Configure SMTP): To: " . htmlspecialchars($to_email) . " Subject: " . htmlspecialchars($subject));
+        // file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+        return true; // Simulate success for placeholder
+    }
+
+    try {
+        // Server settings
+        // $mail->SMTPDebug = SMTP::DEBUG_SERVER; // Enable verbose debug output for troubleshooting
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USERNAME;
+        $mail->Password   = SMTP_PASSWORD;
+        if (defined('SMTP_SECURE') && !empty(SMTP_SECURE)) {
+            $mail->SMTPSecure = SMTP_SECURE; // PHPMailer::ENCRYPTION_SMTPS or PHPMailer::ENCRYPTION_STARTTLS
+        }
+        $mail->Port       = SMTP_PORT;
+
+        // Recipients
+        $mail->setFrom(EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME);
+        $mail->addAddress($to_email, $to_name); // Add a recipient
+
+        // Content
+        $mail->isHTML(true);
+        $mail->Subject = $subject;
+        $mail->Body    = $html_body;
+        $mail->AltBody = strip_tags($html_body); // Plain text version
+
+        $mail->send();
+        $detailed_log_message .= "Status: SUCCESS (Message sent)\n";
+        if (!isset($_SESSION['notification_log'])) $_SESSION['notification_log'] = [];
+        $_SESSION['notification_log'][] = nl2br($log_prefix . "Email sent successfully to " . htmlspecialchars($to_email));
+        // file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+        return true;
+    } catch (Exception $e) {
+        $detailed_log_message .= "Status: FAILED (PHPMailer Error: " . htmlspecialchars($mail->ErrorInfo) . ")\n";
+        if (!isset($_SESSION['notification_log'])) $_SESSION['notification_log'] = [];
+        $_SESSION['notification_log'][] = nl2br($log_prefix . "Email sending FAILED to " . htmlspecialchars($to_email) . " - Error: " . htmlspecialchars($mail->ErrorInfo));
+        // file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+        return false;
+    }
+}
+
 ?>

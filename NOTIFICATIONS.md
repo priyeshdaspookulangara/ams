@@ -60,15 +60,65 @@ Using your own dedicated phone number for WhatsApp Business API via Twilio invol
     *   You would need to create templates in the Twilio console (or via API) that match the notification messages (e.g., "Dear {1}, {2} (Roll No: {3}) was absent on {4}. Contact office: {5}.") and get them approved by WhatsApp.
     *   The `send_notification` function would then need to be modified to send template messages instead of freeform text for WhatsApp if outside the 24-hour window. This typically involves sending a `ContentSid` (for the template ID) and `ContentVariables` (for the placeholders) instead of a `Body` parameter. This is an advanced modification not currently implemented.
 
-## 5. Enabling Notifications in the Application
+## 5. Email Notifications (via PHPMailer/SMTP)
 
-After configuring credentials:
+The system can also send email notifications using the PHPMailer library to connect to an SMTP server.
+
+### 5.1. PHPMailer Library Setup
+This project does not include PHPMailer via a dependency manager like Composer. You need to manually add it:
+1.  Download PHPMailer: Go to the official PHPMailer GitHub repository: [https://github.com/PHPMailer/PHPMailer](https://github.com/PHPMailer/PHPMailer)
+2.  Installation:
+    *   Create a directory `lib/PHPMailer/` in the root of your project.
+    *   Copy the contents of PHPMailer's `src/` directory (which includes `PHPMailer.php`, `SMTP.php`, and `Exception.php`) into your newly created `lib/PHPMailer/` directory.
+    The application expects to find these files at, for example, `lib/PHPMailer/PHPMailer.php`.
+
+### 5.2. SMTP Configuration in `config.php`
+Open `config.php` and update the following SMTP settings with your email provider's details:
+
+```php
+// SMTP Configuration for Email Notifications (using PHPMailer)
+define('SMTP_HOST', 'smtp.example.com');         // Your SMTP server (e.g., 'smtp.gmail.com', 'smtp.mailgun.org')
+define('SMTP_USERNAME', 'your_email@example.com'); // Your SMTP username (often your full email address)
+define('SMTP_PASSWORD', 'your_smtp_password');     // Your SMTP password or an app-specific password
+define('SMTP_PORT', 587);                         // Common ports: 587 (TLS), 465 (SSL). Check your provider.
+define('SMTP_SECURE', 'tls');                     // 'tls' or 'ssl'. Empty if no encryption (not recommended).
+define('EMAIL_FROM_ADDRESS', 'noreply@yourschoolattendance.com'); // Email address notifications will be sent "from"
+define('EMAIL_FROM_NAME', 'School Attendance System');    // The "From" name displayed in emails
+```
+*   **`SMTP_HOST`**: Your outgoing mail server address.
+*   **`SMTP_USERNAME`**: Your login username for the SMTP server.
+*   **`SMTP_PASSWORD`**: Your login password. For services like Gmail, you might need to generate an "App Password" if 2-Factor Authentication is enabled.
+*   **`SMTP_PORT`**: Typically 587 for TLS encryption, or 465 for SSL encryption.
+*   **`SMTP_SECURE`**: Set to `PHPMailer::ENCRYPTION_STARTTLS` (usually for port 587) or `PHPMailer::ENCRYPTION_SMTPS` (usually for port 465). In `config.php`, you'd set the string 'tls' or 'ssl'.
+*   **`EMAIL_FROM_ADDRESS`**: The email address that will appear as the sender.
+*   **`EMAIL_FROM_NAME`**: The name that will appear as the sender.
+
+### 5.3. Parent Email Addresses
+Ensure parent/guardian profiles in the system (via "Manage Students" -> "Manage Parents") have valid email addresses if you want them to receive email notifications.
+
+## 6. Enabling and Customizing Notifications in Application Settings
+
+After configuring API/SMTP credentials in `config.php`:
 1.  Log in as an Admin.
 2.  Go to **Settings**.
-3.  Set **Notification Type** to "sms", "whatsapp", or "both".
-4.  Customize the notification templates as needed. The placeholders `{parent_name}`, `{student_name}`, `{student_rollnumber}`, `{current_date}`, `{office_number}`, and `{consecutive_days}` will be replaced with actual data.
+3.  **Notification Type:**
+    *   Select the desired notification channels. Options now include combinations with Email (e.g., "Email Only", "SMS and Email", "All").
+4.  **SMS/WhatsApp Templates:**
+    *   Customize these plain text templates as needed.
+5.  **Email Templates (HTML):**
+    *   New textareas are available for "Email Template (Single Absence)" and "Email Template (Multiple Consecutive Absences)".
+    *   You can use HTML tags in these templates for rich formatting (e.g., `<p>`, `<strong>`, `<a>`, basic styling).
+    *   The same placeholders are available: `{parent_name}`, `{student_name}`, `{student_rollnumber}`, `{current_date}`, `{office_number}`, and `{consecutive_days}`.
+    *   Example basic HTML template for single absence:
+        ```html
+        <p>Dear {parent_name},</p>
+        <p>This email is to inform you that your child, <strong>{student_name}</strong> (Roll No: {student_rollnumber}), was marked absent on {current_date}.</p>
+        <p>Please contact the school office at {office_number} if you have any questions.</p>
+        <p>Thank you,<br>School Administration</p>
+        ```
+6.  Save settings.
 
-## Troubleshooting
+## 7. Troubleshooting
 
 *   **Check Twilio Logs:** Your Twilio console (Voice & Messaging > Logs > Messages) will show detailed logs of API requests, delivery status, and any errors. This is the first place to look if messages are not being sent/received.
 *   **Error Messages in Application:** The "Notification Log" on the attendance page will display success or failure messages from the application's attempt to call the Twilio API.

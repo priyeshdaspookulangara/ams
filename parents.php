@@ -29,12 +29,16 @@ if (isset($_GET['student_id'])) {
 
 // Handle Add Parent/Guardian form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_parent_guardian']) && $student_id) {
-    $parent_name = mysqli_real_escape_string($conn, $_POST['parent_name']);
-    $phone_number = mysqli_real_escape_string($conn, $_POST['phone_number']);
-    $relationship = mysqli_real_escape_string($conn, $_POST['relationship']);
+    $parent_name = mysqli_real_escape_string($conn, trim($_POST['parent_name']));
+    $phone_number = mysqli_real_escape_string($conn, trim($_POST['phone_number']));
+    $relationship = mysqli_real_escape_string($conn, trim($_POST['relationship']));
+    $email = isset($_POST['email']) ? mysqli_real_escape_string($conn, trim($_POST['email'])) : null;
 
     if (empty($parent_name) || empty($phone_number) || empty($relationship)) {
-        $message = "All parent/guardian fields are required.";
+        $message = "Parent name, phone number, and relationship are required.";
+        $message_type = 'error';
+    } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $message = "Invalid email address format provided.";
         $message_type = 'error';
     } else {
         // Check if this parent (name and phone) already exists for this student to avoid duplicates
@@ -42,11 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_parent_guardian'])
         $check_result = mysqli_query($conn, $check_sql);
 
         if ($check_result && mysqli_num_rows($check_result) > 0) {
-            $message = "Error: This parent/guardian is already listed for this student.";
+            $message = "Error: This parent/guardian (based on name and phone) is already listed for this student.";
             $message_type = 'error';
         } else {
-            $insert_sql = "INSERT INTO parent_guardians (student_id, parent_name, phone_number, relationship)
-                           VALUES ($student_id, '$parent_name', '$phone_number', '$relationship')";
+            $email_sql_val = $email ? "'$email'" : "NULL";
+            $insert_sql = "INSERT INTO parent_guardians (student_id, parent_name, phone_number, email, relationship)
+                           VALUES ($student_id, '$parent_name', '$phone_number', $email_sql_val, '$relationship')";
             if (mysqli_query($conn, $insert_sql)) {
                 $message = "Parent/Guardian '$parent_name' added successfully for $student_name.";
                 $message_type = 'success';
@@ -156,6 +161,9 @@ if ($student_id) {
                 <input type="text" name="phone_number" id="phone_number" required>
                 <small>Include country code if applicable, e.g., +11234567890</small>
 
+                <label for="email">Email Address (Optional):</label>
+                <input type="email" name="email" id="email" placeholder="e.g., parent@example.com">
+
                 <label for="relationship">Relationship to Student:</label>
                 <input type="text" name="relationship" id="relationship" placeholder="e.g., Father, Mother, Guardian" required>
 
@@ -170,6 +178,7 @@ if ($student_id) {
                     <tr>
                         <th>Name</th>
                         <th>Phone Number</th>
+                        <th>Email</th>
                         <th>Relationship</th>
                         <!-- Add actions like Edit/Delete later if needed -->
                     </tr>
@@ -179,6 +188,7 @@ if ($student_id) {
                         <tr>
                             <td><?php echo htmlspecialchars($parent['parent_name']); ?></td>
                             <td><?php echo htmlspecialchars($parent['phone_number']); ?></td>
+                            <td><?php echo $parent['email'] ? htmlspecialchars($parent['email']) : '<em>Not set</em>'; ?></td>
                             <td><?php echo htmlspecialchars($parent['relationship']); ?></td>
                         </tr>
                     <?php endforeach; ?>

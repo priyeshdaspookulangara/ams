@@ -41,6 +41,16 @@ define('TWILIO_WHATSAPP_SENDER', 'whatsapp:+14155238886'); // Example: Twilio Sa
 // define('OTHER_SMS_API_KEY', 'your_other_provider_api_key');
 
 
+// SMTP Configuration for Email Notifications (using PHPMailer)
+define('SMTP_HOST', 'smtp.example.com');         // Replace with your SMTP host (e.g., 'smtp.gmail.com')
+define('SMTP_USERNAME', 'your_email@example.com'); // Replace with your SMTP username (often your email address)
+define('SMTP_PASSWORD', 'your_smtp_password');     // Replace with your SMTP password or app-specific password
+define('SMTP_PORT', 587);                         // Common ports: 587 (TLS), 465 (SSL), 25 (less common, often unencrypted)
+define('SMTP_SECURE', 'tls');                     // 'tls', 'ssl', or empty if not using encryption (not recommended)
+define('EMAIL_FROM_ADDRESS', 'noreply@yourschoolattendance.com'); // The "From" email address for outgoing emails
+define('EMAIL_FROM_NAME', 'School Attendance System');    // The "From" name for outgoing emails
+
+
 // --- End Notification Gateway Configuration ---
 
 ?>

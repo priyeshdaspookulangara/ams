@@ -20,6 +20,7 @@ $sql_parent_guardians = "CREATE TABLE IF NOT EXISTS parent_guardians (
     student_id INT NOT NULL,
     parent_name VARCHAR(255) NOT NULL,
     phone_number VARCHAR(20) NOT NULL,
+    email VARCHAR(255) NULL,
     relationship VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
@@ -41,6 +42,8 @@ $sql_settings = "CREATE TABLE IF NOT EXISTS settings (
     notification_type VARCHAR(10) DEFAULT 'none' CHECK (notification_type IN ('sms', 'whatsapp', 'both', 'none')),
     sms_template_single_absence TEXT,
     sms_template_multiple_absences TEXT,
+    email_template_single_absence TEXT NULL,
+    email_template_multiple_absences TEXT NULL,
     consecutive_absence_threshold INT DEFAULT 3,
     office_number VARCHAR(20),
     CONSTRAINT enforce_single_row CHECK (id = 1)
@@ -291,10 +294,15 @@ if ($result_settings && mysqli_num_rows($result_settings) == 0) {
     $escaped_template_single = mysqli_real_escape_string($conn, $default_template_single);
     $escaped_template_multiple = mysqli_real_escape_string($conn, $default_template_multiple);
     $escaped_office_number = mysqli_real_escape_string($conn, $default_office_number);
-    $insert_default_settings = "INSERT INTO settings (id, notification_type, sms_template_single_absence, sms_template_multiple_absences, consecutive_absence_threshold, office_number)
-                                VALUES (1, 'none', '$escaped_template_single', '$escaped_template_multiple', 3, '$escaped_office_number')";
+    $default_email_template_single = "<p>Dear {parent_name},</p><p>This email is to inform you that your child, <strong>{student_name}</strong> (Roll No: {student_rollnumber}), was marked absent on {current_date}.</p><p>Please contact the school office at {office_number} if you have any questions.</p><p>Thank you.</p>";
+    $default_email_template_multiple = "<p>Dear {parent_name},</p><p>This email is to inform you that your child, <strong>{student_name}</strong> (Roll No: {student_rollnumber}), has been marked absent for {consecutive_days} consecutive days, including today ({current_date}).</p><p>Please contact the school office at {office_number} urgently to discuss this matter.</p><p>Thank you.</p>";
+    $escaped_email_template_single = mysqli_real_escape_string($conn, $default_email_template_single);
+    $escaped_email_template_multiple = mysqli_real_escape_string($conn, $default_email_template_multiple);
+
+    $insert_default_settings = "INSERT INTO settings (id, notification_type, sms_template_single_absence, sms_template_multiple_absences, email_template_single_absence, email_template_multiple_absences, consecutive_absence_threshold, office_number)
+                                VALUES (1, 'none', '$escaped_template_single', '$escaped_template_multiple', '$escaped_email_template_single', '$escaped_email_template_multiple', 3, '$escaped_office_number')";
     if (mysqli_query($conn, $insert_default_settings)) {
-        echo "Default settings inserted successfully.<br>";
+        echo "Default settings (including basic email templates) inserted successfully.<br>";
     } else {
         echo "Error inserting default settings: " . mysqli_error($conn) . "<br>";
     }

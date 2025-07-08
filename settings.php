@@ -12,6 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $notification_type = mysqli_real_escape_string($conn, $_POST['notification_type']);
     $sms_template_single_absence = mysqli_real_escape_string($conn, $_POST['sms_template_single_absence']);
     $sms_template_multiple_absences = mysqli_real_escape_string($conn, $_POST['sms_template_multiple_absences']);
+    $email_template_single_absence = mysqli_real_escape_string($conn, $_POST['email_template_single_absence']);
+    $email_template_multiple_absences = mysqli_real_escape_string($conn, $_POST['email_template_multiple_absences']);
     $consecutive_absence_threshold = (int)$_POST['consecutive_absence_threshold'];
     $office_number = mysqli_real_escape_string($conn, $_POST['office_number']);
 
@@ -20,6 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 notification_type = '$notification_type',
                                 sms_template_single_absence = '$sms_template_single_absence',
                                 sms_template_multiple_absences = '$sms_template_multiple_absences',
+                                email_template_single_absence = '$email_template_single_absence',
+                                email_template_multiple_absences = '$email_template_multiple_absences',
                                 consecutive_absence_threshold = $consecutive_absence_threshold,
                                 office_number = '$office_number'
                             WHERE id = 1";
@@ -49,8 +53,10 @@ if ($result && mysqli_num_rows($result) > 0) {
         'notification_type' => 'none',
         'sms_template_single_absence' => 'Dear {parent_name}, {student_name} (Roll No: {student_rollnumber}) was absent on {current_date}. Contact office: {office_number}.',
         'sms_template_multiple_absences' => 'Dear {parent_name}, {student_name} (Roll No: {student_rollnumber}) has been absent for multiple days. Please contact office: {office_number} urgently.',
+        'email_template_single_absence' => '<p>Dear {parent_name},</p><p>This email is to inform you that your child, <strong>{student_name}</strong> (Roll No: {student_rollnumber}), was marked absent on {current_date}.</p><p>Please contact the school office at {office_number} if you have any questions.</p><p>Thank you.</p>',
+        'email_template_multiple_absences' => '<p>Dear {parent_name},</p><p>This email is to inform you that your child, <strong>{student_name}</strong> (Roll No: {student_rollnumber}), has been marked absent for {consecutive_days} consecutive days, including today ({current_date}).</p><p>Please contact the school office at {office_number} urgently to discuss this matter.</p><p>Thank you.</p>',
         'consecutive_absence_threshold' => 3,
-        'office_number' => ''
+        'office_number' => '123-456-7890'
     ];
 }
 
@@ -154,29 +160,45 @@ if ($result && mysqli_num_rows($result) > 0) {
 
         <form action="settings.php" method="POST">
             <label for="notification_type">Notification Type:</label>
-            <select name="notification_type" id="notification_type">
+            <select name="notification_type" id="notification_type" class="form-select">
                 <option value="none" <?php echo ($settings['notification_type'] == 'none') ? 'selected' : ''; ?>>None</option>
                 <option value="sms" <?php echo ($settings['notification_type'] == 'sms') ? 'selected' : ''; ?>>SMS Only</option>
+                <option value="email" <?php echo ($settings['notification_type'] == 'email') ? 'selected' : ''; ?>>Email Only</option>
                 <option value="whatsapp" <?php echo ($settings['notification_type'] == 'whatsapp') ? 'selected' : ''; ?>>WhatsApp Only</option>
-                <option value="both" <?php echo ($settings['notification_type'] == 'both') ? 'selected' : ''; ?>>SMS and WhatsApp</option>
+                <option value="sms_email" <?php echo ($settings['notification_type'] == 'sms_email') ? 'selected' : ''; ?>>SMS and Email</option>
+                <option value="sms_whatsapp" <?php echo ($settings['notification_type'] == 'sms_whatsapp') ? 'selected' : ''; ?>>SMS and WhatsApp</option>
+                <option value="email_whatsapp" <?php echo ($settings['notification_type'] == 'email_whatsapp') ? 'selected' : ''; ?>>Email and WhatsApp</option>
+                <option value="all" <?php echo ($settings['notification_type'] == 'all') ? 'selected' : ''; ?>>SMS, Email, and WhatsApp</option>
             </select>
 
-            <label for="sms_template_single_absence">SMS/Notification Template (Single Absence):</label>
-            <textarea name="sms_template_single_absence" id="sms_template_single_absence" rows="4"><?php echo htmlspecialchars($settings['sms_template_single_absence']); ?></textarea>
+            <h3 class="mt-4">SMS/WhatsApp Templates</h3>
+            <label for="sms_template_single_absence">SMS/WhatsApp Template (Single Absence):</label>
+            <textarea name="sms_template_single_absence" id="sms_template_single_absence" class="form-control" rows="3"><?php echo htmlspecialchars($settings['sms_template_single_absence']); ?></textarea>
             <div class="placeholders-info">
-                <strong>Available Placeholders:</strong>
-                <code>{parent_name}</code>, <code>{student_name}</code>, <code>{student_rollnumber}</code>, <code>{current_date}</code>, <code>{office_number}</code>
+                <strong>Placeholders:</strong> <code>{parent_name}</code>, <code>{student_name}</code>, <code>{student_rollnumber}</code>, <code>{current_date}</code>, <code>{office_number}</code>
             </div>
 
-
-            <label for="sms_template_multiple_absences">SMS/Notification Template (Multiple Consecutive Absences):</label>
-            <textarea name="sms_template_multiple_absences" id="sms_template_multiple_absences" rows="4"><?php echo htmlspecialchars($settings['sms_template_multiple_absences']); ?></textarea>
+            <label for="sms_template_multiple_absences" class="mt-3">SMS/WhatsApp Template (Multiple Consecutive Absences):</label>
+            <textarea name="sms_template_multiple_absences" id="sms_template_multiple_absences" class="form-control" rows="3"><?php echo htmlspecialchars($settings['sms_template_multiple_absences']); ?></textarea>
              <div class="placeholders-info">
-                <strong>Available Placeholders:</strong>
-                <code>{parent_name}</code>, <code>{student_name}</code>, <code>{student_rollnumber}</code>, <code>{current_date}</code>, <code>{office_number}</code>, <code>{consecutive_days}</code>
+                <strong>Placeholders:</strong> <code>{parent_name}</code>, <code>{student_name}</code>, <code>{student_rollnumber}</code>, <code>{current_date}</code>, <code>{office_number}</code>, <code>{consecutive_days}</code>
             </div>
 
-            <label for="consecutive_absence_threshold">Consecutive Absence Threshold (days):</label>
+            <h3 class="mt-4">Email Templates (HTML Allowed)</h3>
+            <label for="email_template_single_absence">Email Template (Single Absence):</label>
+            <textarea name="email_template_single_absence" id="email_template_single_absence" class="form-control" rows="6"><?php echo htmlspecialchars($settings['email_template_single_absence']); ?></textarea>
+            <div class="placeholders-info">
+                <strong>Placeholders:</strong> (Same as above, use within your HTML structure)
+            </div>
+
+            <label for="email_template_multiple_absences" class="mt-3">Email Template (Multiple Consecutive Absences):</label>
+            <textarea name="email_template_multiple_absences" id="email_template_multiple_absences" class="form-control" rows="6"><?php echo htmlspecialchars($settings['email_template_multiple_absences']); ?></textarea>
+            <div class="placeholders-info">
+                <strong>Placeholders:</strong> (Same as above, use within your HTML structure)
+            </div>
+
+            <h3 class="mt-4">General Settings</h3>
+            <label for="consecutive_absence_threshold" class="mt-3">Consecutive Absence Threshold (days):</label>
             <input type="number" name="consecutive_absence_threshold" id="consecutive_absence_threshold" value="<?php echo (int)$settings['consecutive_absence_threshold']; ?>" min="1">
             <p class="info">Number of consecutive absences to trigger the 'multiple absences' notification.</p>
 

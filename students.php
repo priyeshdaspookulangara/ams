@@ -281,12 +281,13 @@ if($students_result){
                             <td><?php echo htmlspecialchars($student['class_section_display_name']); ?></td>
                             <td>
                                 <?php
-                                $parent_sql = "SELECT parent_name, relationship, phone_number FROM parent_guardians WHERE student_id = " . $student['id'];
+                                $parent_sql = "SELECT parent_name, phone_number, email, relationship FROM parent_guardians WHERE student_id = " . $student['id'] . " ORDER BY relationship";
                                 $parents_result = mysqli_query($conn, $parent_sql);
                                 if ($parents_result && mysqli_num_rows($parents_result) > 0) {
                                     echo '<ul class="parents-list">';
                                     while ($parent = mysqli_fetch_assoc($parents_result)) {
-                                        echo '<li>' . htmlspecialchars($parent['parent_name']) . ' (' . htmlspecialchars($parent['relationship']) . ') - ' . htmlspecialchars($parent['phone_number']) . '</li>';
+                                        $email_info = $parent['email'] ? ' / Email: ' . htmlspecialchars($parent['email']) : '';
+                                        echo '<li>' . htmlspecialchars($parent['parent_name']) . ' (' . htmlspecialchars($parent['relationship']) . ') - Ph: ' . htmlspecialchars($parent['phone_number']) . $email_info . '</li>';
                                     }
                                     echo '</ul>';
                                 } else { echo 'No parents listed.'; }
