@@ -1,0 +1,34 @@
+/* Custom CSS for the application */
+/* Sidebar styles will go here */
+
+body {
+    /* Potentially move existing global styles from individual pages here */
+    font-family: Arial, sans-serif; /* Example, ensure consistency */
+}
+
+/* Basic styling for the new layout structure (placeholders) */
+.sidebar {
+    /* Placeholder - will be defined with Bootstrap classes & custom styles */
+    /* e.g., position: fixed; height: 100vh; */
+}
+
+.main-content {
+    /* Placeholder - will be defined */
+    /* e.g., margin-left: 280px; /* Adjust based on expanded sidebar width */
+    /* padding: 20px; */
+}
+
+/* Styles for collapsed sidebar (example) */
+/*
+body.sidebar-collapsed .sidebar {
+    width: 80px; /* Example collapsed width */
+/* }
+body.sidebar-collapsed .main-content {
+    margin-left: 80px; /* Adjust based on collapsed sidebar width */
+/* }
+*/
+
+/* Add print styles from reports here if making global */
+@media print {
+  .no-print { display: none !important; }
+}

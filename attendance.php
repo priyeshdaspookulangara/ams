@@ -1,16 +1,18 @@
 <?php
-include_once 'auth_check.php';
+include_once 'auth_check.php'; // Ensures session_start() and user functions
 if (!is_logged_in()) {
     header("Location: login.php");
     exit;
 }
 // Specific role/permission checks will be done contextually below
 
+$page_title = "Take/View Attendance"; // Set page title for layout
+
 include 'config.php';
 include 'functions.php';
 
 $message = '';
-$message_type = '';
+$message_type = ''; // 'success', 'error', 'info'
 $notification_messages_display = [];
 
 $current_user_id = current_user_id();
@@ -33,7 +35,7 @@ if ($current_role == 'admin') {
 } elseif ($current_role == 'teacher') {
     $accessible_section_ids = get_teacher_attendance_accessible_sections($current_user_id, $conn);
     if (!empty($accessible_section_ids)) {
-        $ids_str = implode(',', array_map('intval', $accessible_section_ids)); // Ensure integer values
+        $ids_str = implode(',', array_map('intval', $accessible_section_ids));
         $cs_dropdown_sql = "SELECT cs.id, IFNULL(cs.section_name, CONCAT(g.grade_name, ' - ', d.division_name, ' (', cs.academic_year, ')')) as display_name
                             FROM class_sections cs
                             JOIN grades g ON cs.grade_id = g.id
@@ -46,11 +48,13 @@ if ($current_role == 'admin') {
 if (!empty($cs_dropdown_sql)) {
     $cs_res = mysqli_query($conn, $cs_dropdown_sql);
     if ($cs_res) while ($row = mysqli_fetch_assoc($cs_res)) $class_sections_for_dropdown[] = $row;
+    else { $message = "DB Error (cs_dropdown): " . mysqli_error($conn); $message_type = 'error'; }
 }
 
 
 // Handle saving attendance
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) {
+    require_login(['admin', 'teacher']); // Ensure only authorized roles can submit
     $attendance_date_posted = mysqli_real_escape_string($conn, $_POST['attendance_date']);
     $class_section_id_posted = (int)$_POST['filter_class_section_hidden'];
 
@@ -74,7 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
         $message = "Date and Class Section are required to submit attendance.";
         $message_type = 'error';
     } else {
-        // ... (rest of the attendance saving and notification logic remains the same) ...
         $submitted_students_ids = isset($_POST['student_ids']) ? $_POST['student_ids'] : [];
         $statuses = isset($_POST['status']) ? $_POST['status'] : [];
         $notes_list = isset($_POST['notes']) ? $_POST['notes'] : [];
@@ -142,7 +145,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
     }
 }
 
-// Fetch students if date and class_section_id are selected
+// Fetch students if date and class_section_id are selected for display
+if (isset($_POST['fetch_students']) || isset($_POST['submit_attendance'])) { // Also re-fetch after submit
+    // $selected_date and $selected_class_section_id are already set from request or POST
+}
+
 if (!empty($selected_date) && $selected_class_section_id > 0) {
     $can_view_this_attendance = false;
      if ($current_role == 'admin') $can_view_this_attendance = true;
@@ -169,17 +176,14 @@ if (!empty($selected_date) && $selected_class_section_id > 0) {
             while ($row = mysqli_fetch_assoc($result_students)) $students_for_attendance[] = $row;
         } else { $message .= " Error fetching students: " . mysqli_error($conn); $message_type = 'error';}
     } else {
-        // Check if the dropdown should have even contained this option for the teacher
         $is_option_valid_for_teacher = false;
         foreach($class_sections_for_dropdown as $cs_opt) { if($cs_opt['id'] == $selected_class_section_id) $is_option_valid_for_teacher = true;}
-
         if($current_role == 'teacher' && !$is_option_valid_for_teacher && $selected_class_section_id > 0){
-             $message = "Invalid class section selected or you do not have permission."; // More generic if selected via URL manipulation
-        } else if ($selected_class_section_id > 0) { // It was a valid option, but permission check failed (should be rare if dropdown is correct)
+             $message = "Invalid class section selected or you do not have permission.";
+        } else if ($selected_class_section_id > 0) {
              $message = "You do not have permission to view attendance for this class section.";
         }
-        // If $selected_class_section_id is 0, no message needed here, the form handles it.
-        if($selected_class_section_id > 0) $message_type = 'error'; // only set error if a section was actually selected
+        if($selected_class_section_id > 0 && empty($message_type)) $message_type = 'error';
         $students_for_attendance = [];
     }
 }
@@ -189,142 +193,121 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
     $session_notification_log = $_SESSION['notification_log'];
     unset($_SESSION['notification_log']);
 }
+
+// Start output buffering
+ob_start();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Take Attendance</title>
-    <style>
-        /* Styles remain largely the same as before */
-        body { font-family: Arial, sans-serif; margin: 0; padding:0; background-color: #f4f4f4; color: #333; }
-        .top-nav { background-color: #333; color: white; padding: 10px 20px; text-align: center; }
-        .top-nav a { color: white; margin: 0 10px; text-decoration: none; font-weight: bold; }
-        .top-nav .user-info { float: right; color: #ddd; font-size: 0.9em; margin-right: 20px; line-height: 2.5em;}
-        .top-nav a:hover { text-decoration: underline; }
-        .container { width: 95%; margin: 20px auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        h1, h2 { color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;}
-        .message { padding: 10px; margin-bottom: 15px; border-radius: 4px; word-wrap: break-word; }
-        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; word-wrap: break-word; font-size:0.9em; }
-        th { background-color: #f2f2f2; }
-        .filter-form, .attendance-form { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
-        .filter-form label { margin-right: 10px; font-weight: bold; }
-        input[type="date"], select { padding: 8px; margin-right: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;}
-        input[type="text"].notes-field { width: 95%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px;}
-        input[type="submit"], button { padding: 10px 15px; border-radius: 4px; border: 1px solid; cursor: pointer; font-weight: bold; }
-        button.primary { background-color: #007bff; color: white; border-color: #007bff;}
-        button.primary:hover { background-color: #0056b3; }
-        input[type="submit"].secondary { background-color: #28a745; color: white; border-color: #28a745; }
-        input[type="submit"].secondary:hover { background-color: #218838; }
-        .radio-group label { margin-right: 15px; font-weight: normal; }
-        .no-students { text-align: center; padding: 15px; color: #777; }
-        .notification-log-display { margin-top: 20px; padding: 10px; background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 5px; max-height: 300px; overflow-y: auto; font-size: 0.9em;}
-        .parent-reason { font-size: 0.85em; color: #555; margin-top: 5px; padding: 5px; background-color: #eef; border-radius: 3px;}
-        .reason-pending { border-left: 3px solid #ffc107; }
-        .reason-approved { border-left: 3px solid #28a745; }
-        .reason-rejected { border-left: 3px solid #dc3545; }
-        col.col-rollno { width: 8%; } col.col-name { width: 17%; } col.col-status { width: 20%; }
-        col.col-teacher-notes { width: 25%; } col.col-parent-reason { width: 30%; }
-    </style>
-</head>
-<body>
-    <nav class="top-nav">
-        <a href="index.php">Home</a>
-        <?php if (in_array($current_role, ['admin', 'teacher'])): ?>
-            <a href="students.php">Manage Students</a>
-            <a href="attendance.php">Take/View Attendance</a>
-        <?php endif; ?>
-        <?php if ($current_role == 'admin'): ?>
-            <a href="settings.php">Settings</a>
-            <a href="manage_users.php">Manage Users</a>
-            <a href="manage_grades.php">Manage Grades</a>
-            <a href="manage_divisions.php">Manage Divisions</a>
-            <a href="manage_class_sections.php">Manage Class Sections</a>
-            <a href="delegate_tasks.php">Delegate Tasks</a>
-        <?php elseif ($current_role == 'teacher'): ?>
-             <a href="delegate_tasks.php">Delegate Tasks</a>
-        <?php endif; ?>
-        <span class="user-info">Logged in as: <?php echo htmlspecialchars(current_username()); ?> (<?php echo htmlspecialchars($current_role); ?>)</span>
-        <a href="logout.php" style="float:right;">Logout</a>
-    </nav>
-    <div class="container">
-        <h1>Take/View Attendance</h1>
 
-        <?php if ($message): ?> <div class="message <?php echo $message_type; ?>"><?php echo $message; ?></div> <?php endif; ?>
-        <?php if (!empty($notification_messages_display)): ?>
-            <div class="message info"><strong>Notification Attempts Summary:</strong><br><?php foreach ($notification_messages_display as $notif_msg) echo htmlspecialchars($notif_msg)."<br>"; ?></div>
-        <?php endif; ?>
-        <?php if (!empty($session_notification_log)): ?>
-            <div class="notification-log-display"><h3>Notification Log (API Responses/Placeholders):</h3><?php foreach ($session_notification_log as $log_entry) echo "<p style='font-family: monospace; white-space: pre-wrap; margin-bottom: 5px; border-bottom: 1px dashed #ccc; padding-bottom: 5px; word-wrap: break-word;'>".$log_entry."</p>"; ?></div>
-        <?php endif; ?>
+<!-- Page specific content starts here -->
+<div class="container-fluid mt-3"> <!-- Using Bootstrap container-fluid and margin-top -->
+    <h1><?php echo htmlspecialchars($page_title); ?></h1>
 
-        <form action="attendance.php" method="POST" class="filter-form">
-            <label for="attendance_date">Select Date:</label>
-            <input type="date" name="attendance_date" id="attendance_date" value="<?php echo htmlspecialchars($selected_date); ?>" required>
+    <?php if ($message): ?>
+        <div class="alert alert-<?php echo $message_type == 'error' ? 'danger' : ($message_type == 'success' ? 'success' : 'info'); ?> alert-dismissible fade show" role="alert">
+            <?php echo $message; // Message may contain HTML like <br> from DB errors, consider sanitizing if not trusted. Here it's mostly system messages. ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
 
-            <label for="class_section_id">Select Class Section:</label>
-            <select name="class_section_id" id="class_section_id" required>
-                <option value="">-- Select Class Section --</option>
-                <?php foreach ($class_sections_for_dropdown as $cs): ?>
-                    <option value="<?php echo $cs['id']; ?>" <?php echo ($selected_class_section_id == $cs['id']) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($cs['display_name']); ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-            <button type="submit" name="fetch_students" class="primary">Fetch Students</button>
-        </form>
+    <?php if (!empty($notification_messages_display)): ?>
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            <strong>Notification Attempts Summary:</strong><br>
+            <?php foreach ($notification_messages_display as $notif_msg) echo htmlspecialchars($notif_msg)."<br>"; ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
 
-        <?php if (!empty($students_for_attendance)):
-            $current_cs_name_q = mysqli_query($conn, "SELECT IFNULL(cs.section_name, CONCAT(g.grade_name, ' - ', d.division_name, ' (', cs.academic_year, ')')) as display_name FROM class_sections cs JOIN grades g ON cs.grade_id = g.id JOIN divisions d ON cs.division_id = d.id WHERE cs.id = $selected_class_section_id");
-            $current_cs_name = ($current_cs_name_q && mysqli_num_rows($current_cs_name_q)>0) ? mysqli_fetch_assoc($current_cs_name_q)['display_name'] : "Selected Section";
-        ?>
-            <h2>Mark Attendance for: <?php echo htmlspecialchars($current_cs_name); ?> on <?php echo date("D, M j, Y", strtotime($selected_date)); ?></h2>
-            <form action="attendance.php" method="POST" class="attendance-form">
-                <input type="hidden" name="attendance_date" value="<?php echo htmlspecialchars($selected_date); ?>">
-                <input type="hidden" name="filter_class_section_hidden" value="<?php echo htmlspecialchars($selected_class_section_id); ?>">
-                <table>
-                    <colgroup> <col class="col-rollno"> <col class="col-name"> <col class="col-status"> <col class="col-teacher-notes"> <col class="col-parent-reason"> </colgroup>
-                    <thead><tr><th>Roll No.</th><th>Student Name</th><th>Status</th><th>Teacher Notes</th><th>Parent Submitted Reason</th></tr></thead>
+    <?php if (!empty($session_notification_log)): ?>
+        <div class="alert alert-secondary p-2" id="notificationLogDisplay">
+            <h5 class="alert-heading">Notification Log (API/Placeholder):</h5>
+            <div style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85em; white-space: pre-wrap;">
+            <?php foreach ($session_notification_log as $log_entry) echo "<p class='mb-1 border-bottom border-secondary pb-1'>".$log_entry."</p>"; ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <form action="attendance.php" method="POST" class="card p-3 mb-3 bg-light">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label for="attendance_date" class="form-label">Select Date:</label>
+                <input type="date" name="attendance_date" id="attendance_date" class="form-control" value="<?php echo htmlspecialchars($selected_date); ?>" required>
+            </div>
+            <div class="col-md-6">
+                <label for="class_section_id" class="form-label">Select Class Section:</label>
+                <select name="class_section_id" id="class_section_id" class="form-select" required>
+                    <option value="">-- Select Class Section --</option>
+                    <?php foreach ($class_sections_for_dropdown as $cs): ?>
+                        <option value="<?php echo $cs['id']; ?>" <?php echo ($selected_class_section_id == $cs['id']) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($cs['display_name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" name="fetch_students" class="btn btn-primary w-100">Fetch Students</button>
+            </div>
+        </div>
+    </form>
+
+    <?php if (!empty($students_for_attendance)):
+        $current_cs_name_q = mysqli_query($conn, "SELECT IFNULL(cs.section_name, CONCAT(g.grade_name, ' - ', d.division_name, ' (', cs.academic_year, ')')) as display_name FROM class_sections cs JOIN grades g ON cs.grade_id = g.id JOIN divisions d ON cs.division_id = d.id WHERE cs.id = $selected_class_section_id");
+        $current_cs_name = ($current_cs_name_q && mysqli_num_rows($current_cs_name_q)>0) ? mysqli_fetch_assoc($current_cs_name_q)['display_name'] : "Selected Section";
+    ?>
+        <h2 class="mt-4">Mark Attendance for: <?php echo htmlspecialchars($current_cs_name); ?> on <?php echo date("D, M j, Y", strtotime($selected_date)); ?></h2>
+        <form action="attendance.php" method="POST" class="attendance-form">
+            <input type="hidden" name="attendance_date" value="<?php echo htmlspecialchars($selected_date); ?>">
+            <input type="hidden" name="filter_class_section_hidden" value="<?php echo htmlspecialchars($selected_class_section_id); ?>">
+            <div class="table-responsive">
+                <table class="table table-striped table-bordered table-hover">
+                    <colgroup> <col style="width: 8%;"> <col style="width: 17%;"> <col style="width: 25%;"> <col style="width: 25%;"> <col style="width: 25%;"> </colgroup>
+                    <thead class="table-light"><tr><th>Roll No.</th><th>Student Name</th><th>Status</th><th>Teacher Notes</th><th>Parent Submitted Reason</th></tr></thead>
                     <tbody>
                         <?php foreach ($students_for_attendance as $student): ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($student['roll_number']); ?></td>
                                 <td><?php echo htmlspecialchars($student['name']); ?></td>
-                                <td class="radio-group">
+                                <td >
                                     <input type="hidden" name="student_ids[]" value="<?php echo $student['id']; ?>">
-                                    <label><input type="radio" name="status[<?php echo $student['id']; ?>]" value="present" <?php echo (isset($student['is_present']) && $student['is_present'] == 1) ? 'checked' : ''; ?> required> Present</label>
-                                    <label><input type="radio" name="status[<?php echo $student['id']; ?>]" value="absent" <?php echo (isset($student['is_present']) && $student['is_present'] == 0) ? 'checked' : ''; echo (!isset($student['is_present']) && $student['attendance_record_id'] === null) ? 'checked' : '';?> required> Absent</label>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="status[<?php echo $student['id']; ?>]" id="status_present_<?php echo $student['id']; ?>" value="present" <?php echo (isset($student['is_present']) && $student['is_present'] == 1) ? 'checked' : ''; ?> required>
+                                        <label class="form-check-label" for="status_present_<?php echo $student['id']; ?>">Present</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="status[<?php echo $student['id']; ?>]" id="status_absent_<?php echo $student['id']; ?>" value="absent" <?php echo (isset($student['is_present']) && $student['is_present'] == 0) ? 'checked' : ''; echo (!isset($student['is_present']) && $student['attendance_record_id'] === null) ? 'checked' : '';?> required>
+                                        <label class="form-check-label text-danger" for="status_absent_<?php echo $student['id']; ?>">Absent</label>
+                                    </div>
                                 </td>
-                                <td><input type="text" name="notes[<?php echo $student['id']; ?>]" class="notes-field" value="<?php echo isset($student['teacher_notes']) ? htmlspecialchars($student['teacher_notes']) : ''; ?>" placeholder="e.g., Sick leave"></td>
+                                <td><input type="text" name="notes[<?php echo $student['id']; ?>]" class="form-control form-control-sm notes-field" value="<?php echo isset($student['teacher_notes']) ? htmlspecialchars($student['teacher_notes']) : ''; ?>" placeholder="e.g., Sick leave"></td>
                                 <td>
                                     <?php if (!empty($student['parent_reason'])): ?>
-                                        <div class="parent-reason reason-<?php echo htmlspecialchars(strtolower($student['reason_status'])); ?>">
-                                            <strong><?php echo htmlspecialchars(ucfirst(str_replace('_',' ',$student['reason_status']))); ?>:</strong> <?php echo nl2br(htmlspecialchars($student['parent_reason'])); ?>
-                                            <br><small>By: <?php echo htmlspecialchars($student['reason_submitter'] ?: 'Parent'); ?></small>
+                                        <div class="parent-reason p-1 rounded bg-light border reason-<?php echo htmlspecialchars(strtolower($student['reason_status'])); ?>">
+                                            <small><strong><?php echo htmlspecialchars(ucfirst(str_replace('_',' ',$student['reason_status']))); ?>:</strong> <?php echo nl2br(htmlspecialchars($student['parent_reason'])); ?>
+                                            <br>(By: <?php echo htmlspecialchars($student['reason_submitter'] ?: 'Parent'); ?>)</small>
                                             <?php if (in_array($current_role, ['admin', 'teacher']) && $student['absence_reason_id']): ?>
-                                                <br><a href="manage_reason.php?reason_id=<?php echo $student['absence_reason_id']; ?>&att_id=<?php echo $student['attendance_record_id']; ?>" style="font-size:0.9em;">Manage Reason</a>
+                                                <br><a href="manage_reason.php?reason_id=<?php echo $student['absence_reason_id']; ?>&att_id=<?php echo $student['attendance_record_id']; ?>" class="btn btn-sm btn-outline-secondary mt-1 py-0 px-1" style="font-size:0.8em;">Manage Reason</a>
                                             <?php endif; ?>
                                         </div>
-                                    <?php elseif ($student['is_present'] == 0 && $student['attendance_record_id'] !== null) : ?> <small>No reason submitted.</small>
-                                    <?php else: echo '<small>-</small>'; endif; ?>
+                                    <?php elseif ($student['is_present'] == 0 && $student['attendance_record_id'] !== null) : ?> <small class="text-muted">No reason submitted.</small>
+                                    <?php else: echo '<small class="text-muted">-</small>'; endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
-                <input type="submit" name="submit_attendance" value="Submit Attendance & Send Notifications" class="secondary">
-            </form>
-        <?php elseif (($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fetch_students'])) && empty($students_for_attendance) && $selected_class_section_id > 0): ?>
-            <p class="no-students">No students found for the selected class section. Please add students via "Manage Students" page.</p>
-        <?php elseif(empty($class_sections_for_dropdown) && $current_role == 'teacher'): ?>
-            <p class="info">You are not currently assigned or delegated to take attendance for any class sections.</p>
-        <?php endif; ?>
-    </div>
-</body>
-</html>
-<?php if(isset($conn)) mysqli_close($conn); ?>
+            </div>
+            <button type="submit" name="submit_attendance" class="btn btn-success mt-3">Submit Attendance & Send Notifications</button>
+        </form>
+    <?php elseif ( (isset($_POST['fetch_students']) || isset($_GET['fetch_students']) ) && empty($students_for_attendance) && $selected_class_section_id > 0): ?>
+        <p class="alert alert-warning">No students found for the selected class section. Please add students via "Manage Students" page.</p>
+    <?php elseif(empty($class_sections_for_dropdown) && $current_role == 'teacher'): ?>
+        <p class="alert alert-info">You are not currently assigned or delegated to take attendance for any class sections.</p>
+    <?php endif; ?>
+</div>
+<!-- Page specific content ends here -->
+
+<?php
+$page_content_html = ob_get_clean(); // Get buffered content
+if(isset($conn)) mysqli_close($conn); // Close DB connection before including layout
+
+include 'layout_authenticated.php'; // Include the main layout
+?>
