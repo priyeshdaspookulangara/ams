@@ -3,13 +3,17 @@ include 'config.php'; // Includes DB_NAME and establishes $conn
 
 // SQL to create tables
 
-$sql_students = "CREATE TABLE IF NOT EXISTS students (
+$sql_students_old_def_for_reference_only = "
+-- This is the old definition, will be modified below.
+CREATE TABLE IF NOT EXISTS students (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     roll_number VARCHAR(50) NOT NULL UNIQUE,
-    grade VARCHAR(50) NOT NULL,
+    grade VARCHAR(50) NOT NULL, -- This will be removed
+    class_section_id INT, -- This will be added
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
+    -- FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL -- Added later
+);";
 
 $sql_parent_guardians = "CREATE TABLE IF NOT EXISTS parent_guardians (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -25,8 +29,8 @@ $sql_attendance_records = "CREATE TABLE IF NOT EXISTS attendance_records (
     id INT AUTO_INCREMENT PRIMARY KEY,
     student_id INT NOT NULL,
     attendance_date DATE NOT NULL,
-    is_present BOOLEAN NOT NULL DEFAULT 0, -- 0 for absent, 1 for present
-    notes TEXT, -- Teacher notes
+    is_present BOOLEAN NOT NULL DEFAULT 0,
+    notes TEXT,
     recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
     UNIQUE KEY unique_attendance (student_id, attendance_date)
@@ -42,26 +46,21 @@ $sql_settings = "CREATE TABLE IF NOT EXISTS settings (
     CONSTRAINT enforce_single_row CHECK (id = 1)
 )";
 
-// New table: users
 $sql_users = "CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL, -- Will store hashed passwords
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'teacher', 'parent')), -- Define roles
-    entity_id INT NULL, -- For parents, this can link to student_id. For teachers, to a potential teacher_id.
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'teacher', 'parent')),
+    entity_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_role (role),
     KEY idx_entity_id (entity_id)
-    -- If entity_id for parents links to students.id, a FOREIGN KEY could be added:
-    -- CONSTRAINT fk_user_student FOREIGN KEY (entity_id) REFERENCES students(id) ON DELETE SET NULL
-    -- However, entity_id is generic for now. Explicit linking logic will be in PHP.
 )";
 
-// New table: absence_reasons
 $sql_absence_reasons = "CREATE TABLE IF NOT EXISTS absence_reasons (
     id INT AUTO_INCREMENT PRIMARY KEY,
     attendance_record_id INT NOT NULL,
-    submitted_by_user_id INT NOT NULL, -- FK to users.id (parent user)
+    submitted_by_user_id INT NOT NULL,
     reason_text TEXT NOT NULL,
     status VARCHAR(20) DEFAULT 'pending_review' CHECK (status IN ('pending_review', 'approved', 'rejected', 'viewed')),
     submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -70,37 +69,216 @@ $sql_absence_reasons = "CREATE TABLE IF NOT EXISTS absence_reasons (
     FOREIGN KEY (submitted_by_user_id) REFERENCES users(id) ON DELETE CASCADE
 )";
 
+$sql_user_student_links = "CREATE TABLE IF NOT EXISTS user_student_links (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    student_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_link (user_id, student_id)
+)";
 
+// --- New Tables for Academic Structure & Delegation ---
+$sql_grades = "CREATE TABLE IF NOT EXISTS grades (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    grade_name VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)";
+
+$sql_divisions = "CREATE TABLE IF NOT EXISTS divisions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    division_name VARCHAR(50) NOT NULL UNIQUE, -- e.g., 'A', 'B', 'None'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)";
+
+// This table represents a specific class, e.g., Grade 10-A for 2023-2024
+$sql_class_sections = "CREATE TABLE IF NOT EXISTS class_sections (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    grade_id INT NOT NULL,
+    division_id INT NOT NULL,
+    class_teacher_user_id INT NULL, -- FK to users.id (teacher role)
+    academic_year VARCHAR(20) NOT NULL DEFAULT '2023-2024', -- Example default, can be managed
+    section_name VARCHAR(150), -- Optional: e.g., 'Grade 10 - A (2023-2024)' for display, can be auto-generated
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (grade_id) REFERENCES grades(id) ON DELETE CASCADE,
+    FOREIGN KEY (division_id) REFERENCES divisions(id) ON DELETE CASCADE,
+    FOREIGN KEY (class_teacher_user_id) REFERENCES users(id) ON DELETE SET NULL, -- If teacher user is deleted, set to NULL
+    UNIQUE KEY unique_class_section (grade_id, division_id, academic_year)
+)";
+
+// Modified students table
+// We need to handle the alteration carefully if data exists.
+// For a fresh setup, it's easier.
+// Step 1: Create the new students table definition (or alter existing)
+$sql_students_new = "CREATE TABLE IF NOT EXISTS students (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    roll_number VARCHAR(50) NOT NULL, -- Roll number might now be unique PER class_section, not globally
+    class_section_id INT NULL, -- This student belongs to which specific class section
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL, -- If class section is deleted
+    -- Consider UNIQUE KEY (roll_number, class_section_id) if roll numbers are per-class
+    CONSTRAINT fk_student_class_section FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL
+)";
+// Note: The foreign key from students to class_sections is added *after* class_sections table is created.
+
+$sql_teacher_delegations = "CREATE TABLE IF NOT EXISTS teacher_delegations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    class_section_id INT NOT NULL,
+    delegated_to_user_id INT NOT NULL, -- FK to users.id (teacher role)
+    can_take_attendance BOOLEAN DEFAULT 0,
+    can_manage_students BOOLEAN DEFAULT 0,
+    delegated_by_user_id INT NOT NULL, -- FK to users.id (class teacher who delegated)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE CASCADE,
+    FOREIGN KEY (delegated_to_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (delegated_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_delegation (class_section_id, delegated_to_user_id)
+)";
+// --- End New Tables ---
+
+
+// Order of table creation matters due to Foreign Keys
 $queries = [
-    "students" => $sql_students,
-    "parent_guardians" => $sql_parent_guardians,
-    "attendance_records" => $sql_attendance_records,
+    "grades" => $sql_grades,
+    "divisions" => $sql_divisions,
+    "users" => $sql_users, // Users table needed before class_sections (for class_teacher_user_id)
+    "class_sections" => $sql_class_sections,
+    // students table: handle alteration or creation carefully
+    // For this script, we'll assume we can drop and recreate if it's for initial setup
+    // In a production migration, this would be an ALTER TABLE statement.
+    "students_temp_drop_if_exists" => "DROP TABLE IF EXISTS students_temp_backup_for_alter", // Safety
+    "students_rename_old" => "ALTER TABLE students RENAME TO students_temp_backup_for_alter", // Rename if exists
+    "students_create_new" => $sql_students_new, // Create with new structure
+    // The FK constraint from students to class_sections is in $sql_students_new.
+    // Other tables that depend on students (parent_guardians, attendance_records, user_student_links)
+    // might need their FKs temporarily dropped and re-added if 'students' table is fully dropped and recreated.
+    // Given this is a setup script, the simpler path is to ensure dependent tables are created after students.
+    // However, students itself depends on class_sections.
+    // The order below should work for a fresh setup.
+    // For existing data, a proper migration script is needed.
+
+    "parent_guardians" => $sql_parent_guardians, // Depends on students
+    "attendance_records" => $sql_attendance_records, // Depends on students
+    "user_student_links" => $sql_user_student_links, // Depends on students and users
     "settings" => $sql_settings,
-    "users" => $sql_users,
-    "absence_reasons" => $sql_absence_reasons,
-    // New table for linking parents (users) to students
-    "user_student_links" => "CREATE TABLE IF NOT EXISTS user_student_links (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        student_id INT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_link (user_id, student_id)
-    )"
+    "absence_reasons" => $sql_absence_reasons, // Depends on attendance_records and users
+    "teacher_delegations" => $sql_teacher_delegations // Depends on class_sections and users
 ];
 
-echo "Attempting to connect to database and setup tables for database: " . DB_NAME . "<br>";
+echo "Attempting to connect to database and setup tables for database: " . DB_NAME . "<br><hr>";
+echo "<strong>IMPORTANT:</strong> This script will attempt to rename an existing 'students' table to 'students_temp_backup_for_alter' and create a new 'students' table with an updated schema. If you have existing student data, ensure you have a proper backup or migration strategy.<br><hr>";
 
-foreach ($queries as $table_name => $sql) {
-    if (mysqli_query($conn, $sql)) {
-        echo "Table '$table_name' created successfully or already exists.<br>";
+// Check if old students table exists to decide on rename or direct create
+$check_students_table_exists_sql = "SHOW TABLES LIKE 'students'";
+$res_students_exist = mysqli_query($conn, $check_students_table_exists_sql);
+$old_students_table_exists = (mysqli_num_rows($res_students_exist) > 0);
+
+if ($old_students_table_exists) {
+    // Check if it's already the new schema (has class_section_id)
+    $check_column_sql = "SHOW COLUMNS FROM students LIKE 'class_section_id'";
+    $res_column_check = mysqli_query($conn, $check_column_sql);
+    if (mysqli_num_rows($res_column_check) > 0) {
+        echo "'students' table already appears to have the new schema (contains class_section_id). Skipping rename/recreate.<br>";
+        unset($queries['students_temp_drop_if_exists']);
+        unset($queries['students_rename_old']);
+        unset($queries['students_create_new']); // Don't run the CREATE TABLE students if it's already new
+         // Add a simple ALTER to ensure FK if not present (idempotent way)
+        $queries['students_ensure_fk'] = "ALTER TABLE students
+            ADD CONSTRAINT fk_student_class_section_if_not_exists
+            FOREIGN KEY IF NOT EXISTS (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL";
+
     } else {
-        echo "Error creating table '$table_name': " . mysqli_error($conn) . "<br>";
+        echo "'students' table has old schema. Proceeding with rename and recreate.<br>";
+        // The rename/recreate queries are already in $queries array
     }
+} else {
+    echo "'students' table does not exist. Will be created with new schema.<br>";
+    // No old table, so remove rename steps
+    unset($queries['students_temp_drop_if_exists']);
+    unset($queries['students_rename_old']);
+    // Keep 'students_create_new'
 }
 
-// Check and insert default settings
+
+foreach ($queries as $table_name => $sql) {
+    if (empty($sql)) continue; // Skip if a query was unset
+
+    // Special handling for ALTER TABLE RENAME for students
+    if ($table_name === 'students_rename_old') {
+        if ($old_students_table_exists) { // Only run rename if old table actually exists
+             // Check if it's already the new schema (has class_section_id)
+            $check_column_sql = "SHOW COLUMNS FROM students LIKE 'class_section_id'";
+            $res_column_check = mysqli_query($conn, $check_column_sql);
+            if (mysqli_num_rows($res_column_check) > 0) { // Already new
+                echo "Skipping rename of 'students' as it seems to be new schema.<br>";
+                continue;
+            }
+            // Drop dependent FKs before renaming students table (if they point to `students.id`)
+            // This is complex. For simplicity, this setup script might fail here if FKs exist from other tables to students.
+            // A robust migration needs careful FK handling.
+            // For now, we assume this setup script is run when such FKs can be managed or are not yet an issue.
+            echo "Attempting to rename old 'students' table...<br>";
+        } else {
+            echo "Skipping rename of 'students' as it does not exist.<br>";
+            continue; // Skip this query if table doesn't exist
+        }
+    }
+     if ($table_name === 'students_temp_drop_if_exists' && !$old_students_table_exists) {
+        continue; // Don't try to drop backup if old didn't exist
+    }
+
+
+    if (mysqli_query($conn, $sql)) {
+        echo "Executed: '$table_name' successfully.<br>";
+    } else {
+        echo "Error executing '$table_name': " . mysqli_error($conn) . "<br>";
+    }
+}
+echo "<hr>";
+
+// Seed default grades and divisions if they are empty
+$seed_data = [
+    'grades' => [
+        ['grade_name' => 'Grade 1'], ['grade_name' => 'Grade 2'], ['grade_name' => 'Grade 3'],
+        ['grade_name' => 'Grade 4'], ['grade_name' => 'Grade 5'], ['grade_name' => 'Grade 6'],
+        ['grade_name' => 'Grade 7'], ['grade_name' => 'Grade 8'], ['grade_name' => 'Grade 9'],
+        ['grade_name' => 'Grade 10'], ['grade_name' => 'Grade 11'], ['grade_name' => 'Grade 12'],
+    ],
+    'divisions' => [
+        ['division_name' => 'A'], ['division_name' => 'B'], ['division_name' => 'C'],
+        ['division_name' => 'None'] // A default for grades without divisions
+    ]
+];
+
+foreach ($seed_data as $table => $entries) {
+    $check_empty_sql = "SELECT id FROM $table LIMIT 1";
+    $res_empty = mysqli_query($conn, $check_empty_sql);
+    if ($res_empty && mysqli_num_rows($res_empty) == 0) {
+        echo "Seeding data for '$table'...<br>";
+        foreach ($entries as $entry) {
+            $cols = implode(", ", array_keys($entry));
+            $vals = [];
+            foreach(array_values($entry) as $val) {
+                $vals[] = "'" . mysqli_real_escape_string($conn, $val) . "'";
+            }
+            $vals_str = implode(", ", $vals);
+            $insert_sql = "INSERT INTO $table ($cols) VALUES ($vals_str)";
+            if (mysqli_query($conn, $insert_sql)) {
+                echo "Inserted into $table: " . htmlspecialchars(implode(", ", $entry)) . "<br>";
+            } else {
+                echo "Error inserting into $table: " . mysqli_error($conn) . "<br>";
+            }
+        }
+    } else {
+        echo "Table '$table' already has data or error checking. Skipping seed.<br>";
+    }
+}
+echo "<hr>";
+
+// Check and insert default settings (idempotent)
+// (Code for settings and admin user insertion remains the same as before)
 $check_settings_exist = "SELECT id FROM settings WHERE id = 1";
 $result_settings = mysqli_query($conn, $check_settings_exist);
 if ($result_settings && mysqli_num_rows($result_settings) == 0) {
@@ -123,17 +301,14 @@ if ($result_settings && mysqli_num_rows($result_settings) == 0) {
     echo "Settings row (id=1) already exists.<br>";
 }
 
-// Check and insert a default admin user if no users exist
-$check_users_exist = "SELECT id FROM users LIMIT 1";
+// Check and insert a default admin user if no users exist (idempotent)
+$check_users_exist = "SELECT id FROM users WHERE username = 'admin' LIMIT 1"; // More specific check
 $result_users = mysqli_query($conn, $check_users_exist);
 if ($result_users && mysqli_num_rows($result_users) == 0) {
     $admin_username = "admin";
-    // IMPORTANT: Use a strong default password in a real scenario or prompt for one.
-    // For this development setup, using a simple password and then immediately advising to change it.
     $admin_password_plain = "admin123";
     $admin_password_hashed = password_hash($admin_password_plain, PASSWORD_DEFAULT);
     $admin_role = "admin";
-
     $insert_admin_sql = "INSERT INTO users (username, password, role) VALUES (
         '" . mysqli_real_escape_string($conn, $admin_username) . "',
         '" . mysqli_real_escape_string($conn, $admin_password_hashed) . "',
@@ -145,9 +320,9 @@ if ($result_users && mysqli_num_rows($result_users) == 0) {
         echo "Error creating default admin user: " . mysqli_error($conn) . "<br>";
     }
 } else if (!$result_users) {
-    echo "Error checking for existing users: " . mysqli_error($conn) . "<br>";
+    echo "Error checking for existing admin user: " . mysqli_error($conn) . "<br>";
 } else {
-    echo "Users table already has entries or an admin user likely exists.<br>";
+    echo "Default admin user ('admin') already exists or error checking.<br>";
 }
 
 

@@ -58,10 +58,17 @@ if(isset($_GET['logged_out'])){
             <?php endif; ?>
             <?php if (current_user_role() == 'admin'): ?>
                 <a href="settings.php">Settings</a>
-                <a href="manage_users.php">Manage Users</a> <!-- New page to be created -->
+                <a href="manage_users.php">Manage Users</a>
+                <a href="manage_grades.php">Manage Grades</a>
+                <a href="manage_divisions.php">Manage Divisions</a>
+                <a href="manage_class_sections.php">Manage Class Sections</a>
+                <a href="delegate_tasks.php">Delegate Tasks</a>
+            <?php endif; ?>
+            <?php if (current_user_role() == 'teacher' && !in_array('admin', [current_user_role()])): // Show for teacher only if not also admin (admin has it above) ?>
+                <a href="delegate_tasks.php">Delegate Tasks</a>
             <?php endif; ?>
             <?php if (current_user_role() == 'parent'): ?>
-                <a href="parent_dashboard.php">Parent Dashboard</a> <!-- New page to be created -->
+                <a href="parent_dashboard.php">Parent Dashboard</a>
             <?php endif; ?>
             <span class="user-info">Logged in as: <?php echo htmlspecialchars(current_username()); ?> (<?php echo htmlspecialchars(current_user_role()); ?>)</span>
             <a href="logout.php" style="float:right;">Logout</a>
