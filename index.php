@@ -60,6 +60,7 @@ if(isset($_GET['logged_out'])){
                 <div style="position:absolute; background-color:#333; display:none; min-width:160px; box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2); z-index:1;" class="dropdown-content">
                     <a href="reports_student_master.php" style="display:block; padding:8px 10px; text-align:left;">Student Master List</a>
                     <a href="reports_enrollment_summary.php" style="display:block; padding:8px 10px; text-align:left;">Enrollment Summary</a>
+                    <a href="reports_daily_attendance.php" style="display:block; padding:8px 10px; text-align:left;">Daily Attendance</a>
                     <!-- More reports here -->
                 </div>
             </div>
