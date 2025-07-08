@@ -1,5 +1,7 @@
 <?php
-session_start();
+include_once 'auth_check.php';
+require_login(['admin', 'teacher']); // Admins and Teachers can manage parents
+
 include 'config.php'; // Establishes $conn
 
 $message = '';
@@ -115,9 +117,24 @@ if ($student_id) {
 <body>
     <nav class="top-nav">
         <a href="index.php">Home</a>
-        <a href="students.php">Manage Students</a>
-        <a href="attendance.php">Take/View Attendance</a>
-        <a href="settings.php">Settings</a>
+        <?php if (is_logged_in()): ?>
+            <?php if (in_array(current_user_role(), ['admin', 'teacher'])): ?>
+                <a href="students.php">Manage Students</a>
+                <a href="attendance.php">Take/View Attendance</a>
+            <?php endif; ?>
+            <?php if (current_user_role() == 'admin'): ?>
+                <a href="settings.php">Settings</a>
+                <a href="manage_users.php">Manage Users</a> <!-- New page to be created -->
+            <?php endif; ?>
+            <?php if (current_user_role() == 'parent'): ?>
+                <a href="parent_dashboard.php">Parent Dashboard</a> <!-- New page to be created -->
+            <?php endif; ?>
+            <span class="user-info" style="float: right; color: #ddd; font-size: 0.9em; margin-right: 20px; line-height: 2.5em;">Logged in as: <?php echo htmlspecialchars(current_username()); ?> (<?php echo htmlspecialchars(current_user_role()); ?>)</span>
+            <a href="logout.php" style="float:right;">Logout</a>
+        <?php else: ?>
+            <a href="login.php">Login</a>
+            <a href="register.php">Register (Teacher)</a>
+        <?php endif; ?>
     </nav>
 
     <div class="container">

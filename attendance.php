@@ -1,5 +1,7 @@
 <?php
-session_start();
+include_once 'auth_check.php';
+require_login(['admin', 'teacher']); // Admins and Teachers can take attendance
+
 include 'config.php'; // Establishes $conn
 include 'functions.php'; // Includes our new helper functions
 
@@ -36,25 +38,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
     } else {
         $submitted_students_ids = isset($_POST['student_ids']) ? $_POST['student_ids'] : [];
         $statuses = isset($_POST['status']) ? $_POST['status'] : [];
-        $notes_list = isset($_POST['notes']) ? $_POST['notes'] : [];
+        $notes_list = isset($_POST['notes']) ? $_POST['notes'] : []; // Teacher notes
 
         $success_count = 0;
         $error_count = 0;
-        $absent_student_data_for_notification = []; // Store details of students marked absent
+        $absent_student_data_for_notification = [];
 
         foreach ($submitted_students_ids as $student_id) {
             $student_id_clean = (int)$student_id;
             $is_present = isset($statuses[$student_id_clean]) && $statuses[$student_id_clean] == 'present' ? 1 : 0;
-            $note = isset($notes_list[$student_id_clean]) ? mysqli_real_escape_string($conn, $notes_list[$student_id_clean]) : '';
+            // Teacher notes are directly from the form
+            $teacher_note = isset($notes_list[$student_id_clean]) ? mysqli_real_escape_string($conn, $notes_list[$student_id_clean]) : '';
 
             $check_sql = "SELECT id FROM attendance_records WHERE student_id = $student_id_clean AND attendance_date = '$attendance_date'";
             $check_result = mysqli_query($conn, $check_sql);
 
             $operation_successful = false;
+            $current_attendance_record_id = null;
+
             if ($check_result && mysqli_num_rows($check_result) > 0) {
                 $existing_record = mysqli_fetch_assoc($check_result);
                 $record_id = $existing_record['id'];
-                $update_sql = "UPDATE attendance_records SET is_present = $is_present, notes = '$note' WHERE id = $record_id";
+                $current_attendance_record_id = $record_id;
+                // Update existing record with teacher's note
+                $update_sql = "UPDATE attendance_records SET is_present = $is_present, notes = '$teacher_note' WHERE id = $record_id";
                 if (mysqli_query($conn, $update_sql)) {
                     $success_count++;
                     $operation_successful = true;
@@ -63,9 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
                     $message .= "Error updating for student ID $student_id_clean: " . mysqli_error($conn) . "<br>";
                 }
             } else {
+                // Insert new record with teacher's note
                 $insert_sql = "INSERT INTO attendance_records (student_id, attendance_date, is_present, notes)
-                               VALUES ($student_id_clean, '$attendance_date', $is_present, '$note')";
+                               VALUES ($student_id_clean, '$attendance_date', $is_present, '$teacher_note')";
                 if (mysqli_query($conn, $insert_sql)) {
+                    $current_attendance_record_id = mysqli_insert_id($conn);
                     $success_count++;
                     $operation_successful = true;
                 } else {
@@ -75,18 +84,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
             }
 
             if ($operation_successful && !$is_present) {
-                // Fetch student details for notification processing later
                 $student_query_sql = "SELECT name, roll_number FROM students WHERE id = $student_id_clean";
                 $student_res = mysqli_query($conn, $student_query_sql);
                 if($student_res && mysqli_num_rows($student_res) > 0){
                     $absent_student_data_for_notification[$student_id_clean] = mysqli_fetch_assoc($student_res);
+                    // Store attendance_record_id for linking absence reasons if submitted by parent later
+                    $absent_student_data_for_notification[$student_id_clean]['attendance_record_id'] = $current_attendance_record_id;
                 }
             }
         }
 
         if ($error_count > 0) {
             $message_type = 'error';
-            // $message is already populated with specific errors
             $message = "Attendance submission partially failed with $error_count errors. $success_count records processed. <br>" . $message;
         } else if ($success_count > 0) {
             $message = "Attendance for $success_count students recorded/updated successfully for $posted_grade on $attendance_date.";
@@ -99,8 +108,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
             $message_type = 'error';
         }
 
-
-        // --- NOTIFICATION LOGIC (SINGLE & MULTIPLE CONSECUTIVE) ---
         $current_settings = get_settings($conn);
         if (!empty($absent_student_data_for_notification) &&
             ($current_settings['notification_type'] == 'sms' ||
@@ -108,20 +115,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
              $current_settings['notification_type'] == 'both')) {
 
             foreach ($absent_student_data_for_notification as $absent_student_id => $student_details) {
-
                 $consecutive_absences = check_consecutive_absences($absent_student_id, $attendance_date, $conn);
-                $send_multiple_absence_notification = false;
+                $template_to_use = ($consecutive_absences >= $current_settings['consecutive_absence_threshold']) ?
+                                   $current_settings['sms_template_multiple_absences'] :
+                                   $current_settings['sms_template_single_absence'];
+                $notification_type_log_prefix = ($consecutive_absences >= $current_settings['consecutive_absence_threshold']) ?
+                                                "MULTIPLE (" . $consecutive_absences . " days) " : "SINGLE ";
 
-                if ($consecutive_absences >= $current_settings['consecutive_absence_threshold']) {
-                    $send_multiple_absence_notification = true;
-                    $template_to_use = $current_settings['sms_template_multiple_absences'];
-                    $notification_type_log_prefix = "MULTIPLE (" . $consecutive_absences . " days) ";
-                } else {
-                    $template_to_use = $current_settings['sms_template_single_absence'];
-                    $notification_type_log_prefix = "SINGLE ";
-                }
-
-                // Fetch parent/guardian details
                 $parents_query_sql = "SELECT parent_name, phone_number FROM parent_guardians WHERE student_id = $absent_student_id";
                 $parents_res = mysqli_query($conn, $parents_query_sql);
 
@@ -133,42 +133,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_attendance'])) 
                             'student_rollnumber' => $student_details['roll_number'],
                             'current_date' => date("d-m-Y", strtotime($attendance_date)),
                             'office_number' => $current_settings['office_number'],
-                            'consecutive_days' => $consecutive_absences // Available for both templates, though only used in multiple
+                            'consecutive_days' => $consecutive_absences
                         ];
                         $formatted_message = format_notification_message($template_to_use, $data_for_message);
-
-                        $notification_sent_summary = $notification_type_log_prefix . "Notification attempt for " . $student_details['name'] . " to " . $parent['parent_name'] . " (" . $parent['phone_number'] . "): ";
+                        $notification_sent_summary = $notification_type_log_prefix . "Notification for " . $student_details['name'] . " to " . $parent['parent_name'] . ": ";
 
                         if ($current_settings['notification_type'] == 'sms' || $current_settings['notification_type'] == 'both') {
-                            if (send_notification($parent['phone_number'], $formatted_message, 'sms', $student_details['name'])) {
-                                $notification_messages_display[] = $notification_sent_summary . "SMS logged.";
-                            } else {
-                                $notification_messages_display[] = $notification_sent_summary . "SMS failed (placeholder).";
-                            }
+                            send_notification($parent['phone_number'], $formatted_message, 'sms', $student_details['name']);
+                            $notification_messages_display[] = $notification_sent_summary . "SMS logged.";
                         }
                         if ($current_settings['notification_type'] == 'whatsapp' || $current_settings['notification_type'] == 'both') {
-                             if (send_notification($parent['phone_number'], $formatted_message, 'whatsapp', $student_details['name'])) {
-                                $notification_messages_display[] = $notification_sent_summary . "WhatsApp logged.";
-                            } else {
-                                $notification_messages_display[] = $notification_sent_summary . "WhatsApp failed (placeholder).";
-                            }
+                             send_notification($parent['phone_number'], $formatted_message, 'whatsapp', $student_details['name']);
+                             $notification_messages_display[] = $notification_sent_summary . "WhatsApp logged.";
                         }
                     }
                 } else {
-                     $notification_messages_display[] = "No parent/guardian phone numbers found for absent student: " . $student_details['name'] . " (ID: $absent_student_id). Notification not sent.";
+                     $notification_messages_display[] = "No parent/guardian phone for " . $student_details['name'] . ". Not sent.";
                 }
             }
         }
-        // --- END NOTIFICATION LOGIC ---
     }
 }
 
-
 // Fetch students if date and grade are selected
 if (!empty($selected_date) && !empty($selected_grade)) {
-    $sql_fetch_students = "SELECT s.id, s.name, s.roll_number, ar.is_present, ar.notes
+    $sql_fetch_students = "SELECT s.id, s.name, s.roll_number,
+                                  ar.id as attendance_record_id, ar.is_present, ar.notes as teacher_notes,
+                                  abr.id as absence_reason_id, abr.reason_text as parent_reason, abr.status as reason_status, u.username as reason_submitter
                            FROM students s
                            LEFT JOIN attendance_records ar ON s.id = ar.student_id AND ar.attendance_date = '$selected_date'
+                           LEFT JOIN absence_reasons abr ON ar.id = abr.attendance_record_id
+                           LEFT JOIN users u ON abr.submitted_by_user_id = u.id
                            WHERE s.grade = '$selected_grade'
                            ORDER BY s.roll_number, s.name";
     $result_students = mysqli_query($conn, $sql_fetch_students);
@@ -187,7 +182,6 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
     $session_notification_log = $_SESSION['notification_log'];
     unset($_SESSION['notification_log']);
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -198,48 +192,77 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
      <style>
         body { font-family: Arial, sans-serif; margin: 0; padding:0; background-color: #f4f4f4; color: #333; }
         .top-nav { background-color: #333; color: white; padding: 10px 20px; text-align: center; }
-        .top-nav a { color: white; margin: 0 15px; text-decoration: none; font-weight: bold; }
+        .top-nav a { color: white; margin: 0 10px; text-decoration: none; font-weight: bold; }
+        .top-nav .user-info { float: right; color: #ddd; font-size: 0.9em; margin-right: 20px; line-height: 2.5em;} /* Adjusted for consistency */
         .top-nav a:hover { text-decoration: underline; }
-        .container { width: 90%; margin: 20px auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+
+        .container { width: 95%; margin: 20px auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
         h1 { color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px;}
         .message { padding: 10px; margin-bottom: 15px; border-radius: 4px; word-wrap: break-word; }
         .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; } /* Added table-layout fixed */
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; word-wrap: break-word; } /* Added word-wrap */
         th { background-color: #f2f2f2; }
         .filter-form, .attendance-form { margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
         .filter-form label, .attendance-form label { margin-right: 10px; font-weight: bold; }
-        input[type="date"], select, input[type="text"] { padding: 8px; margin-right: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;}
+        input[type="date"], select { padding: 8px; margin-right: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;}
+        input[type="text"].notes-field { width: 95%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px;}
         input[type="submit"], button { padding: 10px 15px; border-radius: 4px; border: 1px solid; cursor: pointer; font-weight: bold; }
         input[type="submit"].primary, button.primary { background-color: #007bff; color: white; border-color: #007bff;}
         input[type="submit"].primary:hover, button.primary:hover { background-color: #0056b3; }
         input[type="submit"].secondary { background-color: #28a745; color: white; border-color: #28a745; }
         input[type="submit"].secondary:hover { background-color: #218838; }
         .radio-group label { margin-right: 15px; font-weight: normal; }
-        .notes-field { width: 90%; }
         .no-students { text-align: center; padding: 15px; color: #777; }
         .notification-log-display { margin-top: 20px; padding: 10px; background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 5px; max-height: 300px; overflow-y: auto; font-size: 0.9em;}
         .notification-log-display h3 { margin-top: 0; }
         .notification-log-display p { font-family: monospace; white-space: pre-wrap; margin-bottom: 5px; border-bottom: 1px dashed #ccc; padding-bottom: 5px; word-wrap: break-word;}
+        .parent-reason { font-size: 0.85em; color: #555; margin-top: 5px; padding: 5px; background-color: #eef; border-radius: 3px;}
+        .parent-reason strong { color: #333; }
+        .reason-pending { border-left: 3px solid #ffc107; } /* Yellow for pending */
+        .reason-approved { border-left: 3px solid #28a745; } /* Green for approved */
+        .reason-rejected { border-left: 3px solid #dc3545; } /* Red for rejected */
+        /* Column widths */
+        col.col-rollno { width: 10%; }
+        col.col-name { width: 20%; }
+        col.col-status { width: 20%; }
+        col.col-teacher-notes { width: 25%; }
+        col.col-parent-reason { width: 25%; }
+
     </style>
 </head>
 <body>
     <nav class="top-nav">
         <a href="index.php">Home</a>
-        <a href="students.php">Manage Students</a>
-        <a href="attendance.php">Take/View Attendance</a>
-        <a href="settings.php">Settings</a>
+        <?php if (is_logged_in()): ?>
+            <?php if (in_array(current_user_role(), ['admin', 'teacher'])): ?>
+                <a href="students.php">Manage Students</a>
+                <a href="attendance.php">Take/View Attendance</a>
+            <?php endif; ?>
+            <?php if (current_user_role() == 'admin'): ?>
+                <a href="settings.php">Settings</a>
+                <a href="manage_users.php">Manage Users</a>
+            <?php endif; ?>
+            <?php if (current_user_role() == 'parent'): ?>
+                <a href="parent_dashboard.php">Parent Dashboard</a>
+            <?php endif; ?>
+            <span class="user-info">Logged in as: <?php echo htmlspecialchars(current_username()); ?> (<?php echo htmlspecialchars(current_user_role()); ?>)</span>
+            <a href="logout.php" style="float:right;">Logout</a>
+        <?php else: ?>
+            <a href="login.php">Login</a>
+            <a href="register.php">Register (Teacher)</a>
+        <?php endif; ?>
     </nav>
     <div class="container">
         <h1>Take/View Attendance</h1>
 
-        <?php if ($message): // Main status message for attendance ?>
+        <?php if ($message): ?>
             <div class="message <?php echo $message_type; ?>"><?php echo $message; ?></div>
         <?php endif; ?>
 
-        <?php if (!empty($notification_messages_display)): // Summary of notification attempts ?>
+        <?php if (!empty($notification_messages_display)): ?>
             <div class="message info">
                 <strong>Notification Attempts Summary:</strong><br>
                 <?php foreach ($notification_messages_display as $notif_msg): ?>
@@ -248,7 +271,7 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
             </div>
         <?php endif; ?>
 
-        <?php if (!empty($session_notification_log)): // Detailed placeholder log from send_notification() ?>
+        <?php if (!empty($session_notification_log)): ?>
             <div class="notification-log-display">
                 <h3>Notification Log (Placeholder Output):</h3>
                 <?php foreach ($session_notification_log as $log_entry): ?>
@@ -279,12 +302,20 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
                 <input type="hidden" name="attendance_date" value="<?php echo htmlspecialchars($selected_date); ?>">
                 <input type="hidden" name="filter_grade_hidden" value="<?php echo htmlspecialchars($selected_grade); ?>">
                 <table>
+                    <colgroup>
+                        <col class="col-rollno">
+                        <col class="col-name">
+                        <col class="col-status">
+                        <col class="col-teacher-notes">
+                        <col class="col-parent-reason">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>Roll No.</th>
                             <th>Student Name</th>
                             <th>Status</th>
-                            <th>Notes (Optional)</th>
+                            <th>Teacher Notes</th>
+                            <th>Parent Submitted Reason</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -301,14 +332,30 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
                                     <label>
                                         <input type="radio" name="status[<?php echo $student['id']; ?>]" value="absent"
                                             <?php echo (isset($student['is_present']) && $student['is_present'] == 0) ? 'checked' : ''; ?>
-                                            <?php echo (!isset($student['is_present'])) ? 'checked' : ''; ?>
+                                            <?php echo (!isset($student['is_present']) && $student['attendance_record_id'] === null) ? 'checked' : ''; // Default to absent if no record at all ?>
                                             required> Absent
                                     </label>
                                 </td>
                                 <td>
                                     <input type="text" name="notes[<?php echo $student['id']; ?>]" class="notes-field"
-                                           value="<?php echo isset($student['notes']) ? htmlspecialchars($student['notes']) : ''; ?>"
+                                           value="<?php echo isset($student['teacher_notes']) ? htmlspecialchars($student['teacher_notes']) : ''; ?>"
                                            placeholder="e.g., Sick leave, Half day">
+                                </td>
+                                <td>
+                                    <?php if (!empty($student['parent_reason'])): ?>
+                                        <div class="parent-reason reason-<?php echo htmlspecialchars(strtolower($student['reason_status'])); ?>">
+                                            <strong>Reason (<?php echo htmlspecialchars($student['reason_status']); ?>):</strong> <?php echo nl2br(htmlspecialchars($student['parent_reason'])); ?>
+                                            <br><small>By: <?php echo htmlspecialchars($student['reason_submitter'] ?: 'Parent'); ?></small>
+                                            <!-- Link to approve/reject page can be added here by admin/teacher later -->
+                                            <?php if (in_array(current_user_role(), ['admin', 'teacher']) && $student['absence_reason_id']): ?>
+                                                <br><a href="manage_reason.php?reason_id=<?php echo $student['absence_reason_id']; ?>&att_id=<?php echo $student['attendance_record_id']; ?>" style="font-size:0.9em;">Manage Reason</a>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php elseif ($student['is_present'] == 0 && $student['attendance_record_id'] !== null) : ?>
+                                        <small>No reason submitted by parent yet.</small>
+                                    <?php else: ?>
+                                        <small>-</small>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -322,6 +369,4 @@ if (isset($_SESSION['notification_log']) && is_array($_SESSION['notification_log
     </div>
 </body>
 </html>
-<?php
-mysqli_close($conn);
-?>
+<?php if(isset($conn)) mysqli_close($conn); ?>
