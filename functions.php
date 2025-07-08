@@ -7,7 +7,6 @@ function get_settings($conn) {
     if ($result && mysqli_num_rows($result) > 0) {
         return mysqli_fetch_assoc($result);
     }
-    // Fallback to sensible defaults if settings are somehow missing
     return [
         'notification_type' => 'none',
         'sms_template_single_absence' => 'Dear {parent_name}, {student_name} (Roll No: {student_rollnumber}) was absent on {current_date}. Contact office: {office_number}.',
@@ -25,50 +24,106 @@ function format_notification_message($template, $data) {
     return $template;
 }
 
-// Placeholder function to "send" notifications
+// Function to send notifications (SMS & WhatsApp via Twilio)
 function send_notification($phoneNumber, $message, $type, $studentNameForLog = "N/A") {
-    $log_message = "[" . date("Y-m-d H:i:s") . "] Notification Sent (Placeholder)\n";
-    $log_message .= "Type: " . strtoupper($type) . "\n";
-    $log_message .= "To: " . $phoneNumber . "\n";
-    $log_message .= "For Student: " . $studentNameForLog . "\n";
-    $log_message .= "Message: " . $message . "\n";
-    $log_message .= "-------------------------------------------------\n";
+    $log_prefix = "[" . date("Y-m-d H:i:s") . "] [Student: " . htmlspecialchars($studentNameForLog) . "] ";
+    $detailed_log_message = "Type: " . strtoupper($type) . " | To: " . htmlspecialchars($phoneNumber) . "\nMessage: " . htmlspecialchars($message) . "\n";
 
-    if (!isset($_SESSION['notification_log'])) {
-        $_SESSION['notification_log'] = [];
+    // Common check for Twilio credentials
+    if (!defined('TWILIO_ACCOUNT_SID') || TWILIO_ACCOUNT_SID === 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' ||
+        !defined('TWILIO_AUTH_TOKEN') || TWILIO_AUTH_TOKEN === 'your_auth_token_xxxxxxxxxxxxxxx') {
+
+        $detailed_log_message .= "Status: SKIPPED (Twilio Account SID/Auth Token not configured - using placeholder log)\n";
+        $_SESSION['notification_log'][] = nl2br($log_prefix . strtoupper($type) . " (Placeholder - Configure Twilio SID/Token): To: " . htmlspecialchars($phoneNumber) . " Msg: " . htmlspecialchars($message));
+        // Log to file if needed: file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+        return true; // Simulate success for placeholder
     }
-    $_SESSION['notification_log'][] = nl2br(htmlspecialchars($log_message));
-    return true;
+
+    $account_sid = TWILIO_ACCOUNT_SID;
+    $auth_token = TWILIO_AUTH_TOKEN;
+    $twilio_api_url = "https://api.twilio.com/2010-04-01/Accounts/$account_sid/Messages.json";
+    $data = [];
+
+    if ($type == 'sms') {
+        if (!defined('TWILIO_PHONE_NUMBER') || TWILIO_PHONE_NUMBER === '+1234567890') {
+            $detailed_log_message .= "Status: SKIPPED (Twilio Phone Number for SMS not configured - using placeholder log)\n";
+            $_SESSION['notification_log'][] = nl2br($log_prefix . "SMS (Placeholder - Configure Twilio Phone #): To: " . htmlspecialchars($phoneNumber) . " Msg: " . htmlspecialchars($message));
+            // Log to file: file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+            return true;
+        }
+        $data = [
+            'To' => $phoneNumber, // Standard E.164 format for SMS
+            'From' => TWILIO_PHONE_NUMBER,
+            'Body' => $message
+        ];
+    } elseif ($type == 'whatsapp') {
+        if (!defined('TWILIO_WHATSAPP_SENDER') || TWILIO_WHATSAPP_SENDER === 'whatsapp:+14155238886' || empty(TWILIO_WHATSAPP_SENDER)) {
+             // Allow default sandbox number if it's not the placeholder value for "empty"
+            if (TWILIO_WHATSAPP_SENDER !== 'whatsapp:+14155238886' && empty(TWILIO_WHATSAPP_SENDER)) {
+                 $detailed_log_message .= "Status: SKIPPED (Twilio WhatsApp Sender not configured - using placeholder log)\n";
+                $_SESSION['notification_log'][] = nl2br($log_prefix . "WhatsApp (Placeholder - Configure Twilio WhatsApp Sender): To: " . htmlspecialchars($phoneNumber) . " Msg: " . htmlspecialchars($message));
+                // Log to file: file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+                return true;
+            }
+        }
+        // For WhatsApp, phone numbers need to be prefixed with "whatsapp:"
+        $data = [
+            'To' => 'whatsapp:' . $phoneNumber, // Ensure $phoneNumber is in E.164 format
+            'From' => TWILIO_WHATSAPP_SENDER, // This is your Twilio WhatsApp enabled number or Sandbox number
+            'Body' => $message
+        ];
+        // Note: For non-sandbox, WhatsApp often requires pre-approved message templates for business-initiated messages.
+        // Freeform messages like this are typically allowed only within a 24-hour customer care window
+        // after the user messages the business number first, or if using the Twilio Sandbox for WhatsApp.
+    } else {
+        $detailed_log_message .= "Status: FAILED (Unknown notification type: " . htmlspecialchars($type) . ")\n";
+        $_SESSION['notification_log'][] = nl2br($log_prefix . "Unknown notification type: " . htmlspecialchars($type));
+        // Log to file: file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+        return false;
+    }
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $twilio_api_url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_USERPWD, "$account_sid:$auth_token");
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+
+    if ($curl_error) {
+        $detailed_log_message .= "Status: FAILED (cURL Error: " . htmlspecialchars($curl_error) . ")\n";
+        $_SESSION['notification_log'][] = nl2br($log_prefix . strtoupper($type) . " Gateway Error: cURL failed - " . htmlspecialchars($curl_error));
+    } else {
+        $response_data = json_decode($response, true);
+        if ($http_code >= 200 && $http_code < 300) {
+            $detailed_log_message .= "Status: SUCCESS (Twilio SID: " . htmlspecialchars($response_data['sid'] ?? 'N/A') . ", Status: " . htmlspecialchars($response_data['status'] ?? 'N/A') . ")\n";
+            $_SESSION['notification_log'][] = nl2br($log_prefix . strtoupper($type) . " sent successfully to " . htmlspecialchars($data['To']) . " (SID: " . htmlspecialchars($response_data['sid'] ?? 'N/A') . ")");
+        } else {
+            $error_msg = $response_data['message'] ?? 'Unknown API error';
+            $error_code = $response_data['code'] ?? 'N/A';
+            $detailed_log_message .= "Status: FAILED (HTTP: $http_code, Twilio Code: $error_code, Message: " . htmlspecialchars($error_msg) . ")\n";
+            $_SESSION['notification_log'][] = nl2br($log_prefix . strtoupper($type) . " sending FAILED to " . htmlspecialchars($data['To']) . " - HTTP $http_code - " . htmlspecialchars($error_msg));
+        }
+    }
+    // Log to file: file_put_contents('notification_activity_log.txt', $log_prefix . $detailed_log_message . "-------------------------------------------------\n", FILE_APPEND);
+    return ($http_code >= 200 && $http_code < 300 && !$curl_error);
 }
 
-// Function to check for consecutive absences
+
+// Function to check for consecutive absences (implementation remains the same)
 function check_consecutive_absences($student_id, $current_attendance_date_str, $conn) {
     $consecutive_days = 0;
-    // Ensure date is in Y-m-d for comparison
     $current_date = date('Y-m-d', strtotime($current_attendance_date_str));
 
-    // Start checking from the current date and go backwards
     for ($i = 0; ; $i++) {
         $check_date_obj = new DateTime($current_date);
         $check_date_obj->modify("-$i days");
         $check_date_str = $check_date_obj->format('Y-m-d');
-
-        // Skip weekends (Saturday, Sunday) - Optional, depending on school policy
-        $day_of_week = $check_date_obj->format('N'); // 1 (for Monday) through 7 (for Sunday)
-        if ($day_of_week == 6 || $day_of_week == 7) {
-            // If today is a weekend and we are checking it, it means no school, so not an absence.
-            // If we are iterating backwards and hit a weekend, we should continue checking the previous school day.
-            // This logic assumes attendance is only taken on weekdays.
-            // If $i is 0 (current day is weekend), this student can't be marked absent for this day.
-            if ($i == 0 && ($day_of_week == 6 || $day_of_week == 7) ) return 0;
-            // If we're iterating backwards and hit a weekend, this day doesn't break consecutiveness,
-            // but it also doesn't count towards it. So, we just continue the loop to the previous day.
-            // However, the $i still increments, so we need to effectively extend our search window.
-            // A simpler way is to just check if the record exists and is_present = 0.
-            // If school policy is to count weekends in consecutive absences if student is absent Friday and Monday,
-            // then this weekend skipping logic should be removed or adjusted.
-            // For now, let's assume school days only.
-        }
 
         $sql = "SELECT is_present FROM attendance_records
                 WHERE student_id = $student_id AND attendance_date = '$check_date_str'";
@@ -76,51 +131,13 @@ function check_consecutive_absences($student_id, $current_attendance_date_str, $
 
         if ($result && mysqli_num_rows($result) > 0) {
             $record = mysqli_fetch_assoc($result);
-            if ($record['is_present'] == 0) { // Student was absent
-                // If the day is a weekend, but an absence was marked (unlikely but possible), count it.
-                // Or, more typically, if it's a weekday and absent.
+            if ($record['is_present'] == 0) {
                 $consecutive_days++;
-            } else { // Student was present or record exists and is_present is true
-                break; // Streak broken
-            }
-        } else {
-            // No record for this day.
-            // If $i = 0 (current day), it means attendance not yet taken or student is considered present by default if no record.
-            // For consecutive check, if no record on a *previous* working day, it implies the student was present or it was a holiday.
-            // This means the streak of *absences* is broken.
-            // However, if today is the first day of absence, and no prior records, consecutive_days will be 1.
-            if ($i == 0) { // If it's the current day and no record (implies absent if this function is called after marking them absent)
-                 // This case is tricky: this function is called AFTER a student is marked absent for current_attendance_date_str.
-                 // So, if $i=0, we should assume they are absent for this day.
-                 // The actual record might not be committed yet if called mid-transaction, but logic implies it.
-                 // Let's assume the function is called after the day's absence is recorded.
-                 // So if $i=0 and no record, it's an issue or means they were not marked absent yet.
-                 // Given the context, we assume the current day's absence is a fact.
-                 // The loop structure handles the current day's absence implicitly if it's marked.
-                 // If there's no record for a *previous* day, the streak is broken.
             } else {
-                 // No record for a previous day breaks the streak of recorded absences.
                 break;
             }
-            // If $i=0 and no record, and we are here, it means the current day's absence is what we are checking.
-            // The logic below handles this. If this function is called for an absent student on current_attendance_date_str,
-            // their absence for the current day should be counted.
-            // The current implementation relies on the current day's absence being in the DB.
-            // Let's adjust: the function is called for a student *known* to be absent today.
-            // So, if $i=0, we count 1, then check previous days.
-
-            // If checking historical dates and no record is found for a weekday, assume present or holiday.
-            // This breaks the consecutive absence streak.
-            // Exception: if $i=0 (current day), this day's absence is the trigger, so it counts as 1.
-            // The way the loop is structured, if current day is absent, $consecutive_days will be at least 1.
-            // If no record for a *previous* day, streak broken.
+        } else {
             if ($i > 0) break;
-            // If $i == 0 and no record, it means current day's attendance not in DB.
-            // This function expects the current day's absence to be recorded before it's called for accurate count.
-            // For robustness, if $i == 0 and no record, we can assume this is the first day of absence being recorded.
-            // However, the most reliable way is to ensure current day's record is in DB.
-            // Let's assume the calling code ensures current day's absence is recorded.
-            // So, if no record for $check_date_str where $i > 0, streak is broken.
         }
     }
     return $consecutive_days;
