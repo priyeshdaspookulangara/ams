@@ -93,6 +93,10 @@ function is_submenu_active($submenu_items, $current_page_url) {
     return false;
 }
 
+// The PHP logic for $menu_items array and helper functions is now moved to sidebar.inc.php
+// $current_page_url is also defined in sidebar.inc.php for menu context
+// $user_role is also defined in sidebar.inc.php
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
