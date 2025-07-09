@@ -64,6 +64,9 @@ if(isset($_GET['logged_out'])){
                     <a href="reports_student_individual_attendance.php" style="display:block; padding:8px 10px; text-align:left;">Student Individual Record</a>
                     <a href="reports_absentee_list.php" style="display:block; padding:8px 10px; text-align:left;">Absentee List (Daily)</a>
                     <a href="reports_excessive_absences.php" style="display:block; padding:8px 10px; text-align:left;">Excessive Absences</a>
+                    <?php if (current_user_role() == 'admin'): ?>
+                        <a href="reports_overall_attendance_summary.php" style="display:block; padding:8px 10px; text-align:left;">Overall Inst. Summary</a>
+                    <?php endif; ?>
                     <!-- More reports here -->
                 </div>
             </div>
