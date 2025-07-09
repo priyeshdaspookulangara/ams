@@ -275,6 +275,7 @@ function is_submenu_active($submenu_items, $current_page_url) {
     </div>
     <!-- End Main Content Wrapper -->
 
+    <script src="assets/js/jquery.min.js"></script> <!-- Added jQuery -->
     <script src="assets/js/bootstrap.bundle.min.js"></script>
     <script>
         // Sidebar Toggle Functionality

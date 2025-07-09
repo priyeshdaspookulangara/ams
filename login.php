@@ -40,13 +40,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
 
                 // Redirect based on role
                 if ($user['role'] == 'admin') {
-                    header("Location: settings.php"); // Or an admin dashboard
+                    header("Location: admin_dashboard.php");
                 } elseif ($user['role'] == 'teacher') {
-                    header("Location: attendance.php"); // Or a teacher dashboard
+                    header("Location: teacher_dashboard.php");
                 } elseif ($user['role'] == 'parent') {
-                    header("Location: parent_dashboard.php"); // To be created
+                    header("Location: parent_dashboard.php");
                 } else {
-                    header("Location: index.php"); // Fallback
+                    header("Location: index.php"); // Fallback for any other unforeseen role
                 }
                 exit;
             } else {

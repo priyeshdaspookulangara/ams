@@ -98,24 +98,25 @@ if(isset($_GET['logged_out'])){
         <?php echo $page_message; ?>
 
         <?php if (is_logged_in()): ?>
-            <p>Welcome back, <?php echo htmlspecialchars(current_username()); ?>!</p>
-            <div class="quick-links">
+            <h2>Welcome, <?php echo htmlspecialchars(current_username()); ?>!</h2>
+            <p class="lead">You are logged in as a <?php echo htmlspecialchars(current_user_role()); ?>.</p>
+            <p>Please use the sidebar navigation to access system features and your dashboard.</p>
+
+            <p class="mt-4">
                 <?php if (current_user_role() == 'admin'): ?>
-                    <a href="settings.php">Go to Settings</a>
-                    <a href="attendance.php">Take Attendance</a>
-                    <a href="manage_users.php" class="secondary">Manage Users</a>
+                    <a href="admin_dashboard.php" class="btn btn-primary btn-lg">Go to Admin Dashboard</a>
                 <?php elseif (current_user_role() == 'teacher'): ?>
-                    <a href="attendance.php">Take Attendance</a>
-                    <a href="students.php">Manage Students</a>
+                    <a href="teacher_dashboard.php" class="btn btn-primary btn-lg">Go to Teacher Dashboard</a>
                 <?php elseif (current_user_role() == 'parent'): ?>
-                    <a href="parent_dashboard.php">View Your Child's Attendance</a>
+                    <a href="parent_dashboard.php" class="btn btn-primary btn-lg">Go to Parent Dashboard</a>
                 <?php endif; ?>
-            </div>
+            </p>
+
         <?php else: ?>
-            <p>Please login or register to access the system features.</p>
+            <p class="lead">Please login or register to access the system features.</p>
             <div class="quick-links">
-                <a href="login.php">Login</a>
-                <a href="register.php" class="secondary">Register as Teacher</a>
+                <a href="login.php" class="btn btn-success btn-lg">Login</a>
+                <a href="register.php" class="btn btn-info btn-lg ms-2">Register as Teacher</a>
             </div>
             <p style="margin-top: 20px;"><strong>Note:</strong> The default admin credentials (if `setup_db.php` just ran for the first time) are username: `admin`, password: `admin123`. Please change this immediately after logging in if you are the administrator.</p>
         <?php endif; ?>
