@@ -96,9 +96,9 @@ if ($output_format == 'pdf' && empty($message_type == 'error') && !empty($studen
     $pdf_html_content .= "<h2>For: " . htmlspecialchars($filter_details_header) . "</h2>";
     $pdf_html_content .= "<p>Total Students: " . count($students_data) . "</p>";
     $pdf_html_content .= "<style> body { font-family: Arial, sans-serif; font-size: 9pt; } table { width: 100%; border-collapse: collapse; margin-top: 5px; } th, td { border: 1px solid #ccc; padding: 3px; text-align: left; vertical-align:top; } th { background-color: #f0f0f0; font-weight: bold; } .parent-info { list-style-type: none; padding-left: 0; margin:0;} .parent-info li {font-size:0.9em; margin-bottom:2px;} h1,h2 {text-align:center;} </style>";
-    $pdf_html_content .= "<table><thead><tr><th>ID</th><th>Name</th><th>Roll No.</th><th>DOB</th><th>Class Section</th><th>Academic Year</th><th>Parent/Guardian Info</th></tr></thead><tbody>";
+    $pdf_html_content .= "<table><thead><tr><th>ID</th><th>Name</th><th>Roll No.</th><th>DOB</th><th>Gender</th><th>Class Section</th><th>Academic Year</th><th>Parent/Guardian Info</th></tr></thead><tbody>";
     foreach ($students_data as $student) {
-        $pdf_html_content .= "<tr><td>" . $student['student_id'] . "</td><td>" . htmlspecialchars($student['student_name']) . "</td><td>" . htmlspecialchars($student['roll_number']) . "</td><td>" . ($student['date_of_birth'] ? date("Y-m-d", strtotime($student['date_of_birth'])) : '-') . "</td><td>" . htmlspecialchars($student['class_section_display']) . "</td><td>" . htmlspecialchars($student['academic_year']) . "</td><td>";
+        $pdf_html_content .= "<tr><td>" . $student['student_id'] . "</td><td>" . htmlspecialchars($student['student_name']) . "</td><td>" . htmlspecialchars($student['roll_number']) . "</td><td>" . ($student['date_of_birth'] ? date("Y-m-d", strtotime($student['date_of_birth'])) : '-') . "</td><td>" . ($student['gender'] ? htmlspecialchars($student['gender']) : '-') . "</td><td>" . ($student['class_section_display'] ? htmlspecialchars($student['class_section_display']) : 'N/A') . "</td><td>" . ($student['academic_year'] ? htmlspecialchars($student['academic_year']) : 'N/A') . "</td><td>";
         if (!empty($student['parents'])) {
             $pdf_html_content .= "<ul class='parent-info'>";
             foreach($student['parents'] as $parent){
@@ -183,6 +183,7 @@ ob_start();
                             <th>Name</th>
                             <th>Roll No.</th>
                             <th>DOB</th>
+                        <th>Gender</th>
                             <th>Class Section</th>
                             <th>Acad. Year</th>
                             <th>Parent/Guardian Info</th>
@@ -195,8 +196,9 @@ ob_start();
                                 <td><?php echo htmlspecialchars($student['student_name']); ?></td>
                                 <td><?php echo htmlspecialchars($student['roll_number']); ?></td>
                                 <td><?php echo $student['date_of_birth'] ? date("M j, Y", strtotime($student['date_of_birth'])) : '-'; ?></td>
-                                <td><?php echo htmlspecialchars($student['class_section_display']); ?></td>
-                                <td><?php echo htmlspecialchars($student['academic_year']); ?></td>
+                            <td><?php echo $student['gender'] ? htmlspecialchars($student['gender']) : '-'; ?></td>
+                            <td><?php echo $student['class_section_display'] ? htmlspecialchars($student['class_section_display']) : '<em class=text-muted>N/A</em>'; ?></td>
+                            <td><?php echo $student['academic_year'] ? htmlspecialchars($student['academic_year']) : '<em class=text-muted>N/A</em>'; ?></td>
                                 <td>
                                     <?php if (!empty($student['parents'])): ?>
                                         <ul class="list-unstyled mb-0 small">

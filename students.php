@@ -55,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_student'])) {
     $roll_number = mysqli_real_escape_string($conn, trim($_POST['roll_number']));
     $class_section_id_posted = (int)$_POST['class_section_id'];
     $date_of_birth = !empty($_POST['date_of_birth']) ? mysqli_real_escape_string($conn, $_POST['date_of_birth']) : NULL;
+    $gender = !empty($_POST['gender']) ? mysqli_real_escape_string($conn, $_POST['gender']) : NULL;
 
     $can_add_to_section = false;
     if ($current_role == 'admin') {
@@ -77,7 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_student'])) {
             $message = "Error: Roll number '$roll_number' already exists in this class section."; $message_type = 'error';
         } else {
             $dob_sql_val = $date_of_birth ? "'$date_of_birth'" : "NULL";
-            $insert_sql = "INSERT INTO students (name, roll_number, class_section_id, date_of_birth) VALUES ('$name', '$roll_number', $class_section_id_posted, $dob_sql_val)";
+                $gender_sql_val = $gender ? "'$gender'" : "NULL";
+                $insert_sql = "INSERT INTO students (name, roll_number, class_section_id, date_of_birth, gender) VALUES ('$name', '$roll_number', $class_section_id_posted, $dob_sql_val, $gender_sql_val)";
             if (mysqli_query($conn, $insert_sql)) {
                 $message = "Student '$name' added successfully."; $message_type = 'success';
             } else { $message = "Error adding student: " . mysqli_error($conn); $message_type = 'error';}
@@ -158,7 +160,17 @@ ob_start();
                     <label for="date_of_birth" class="form-label">Date of Birth (Optional):</label>
                     <input type="date" name="date_of_birth" id="date_of_birth" class="form-control">
                 </div>
-                <div class="col-md-12">
+                <div class="col-md-3">
+                    <label for="gender" class="form-label">Gender (Optional):</label>
+                    <select name="gender" id="gender" class="form-select">
+                        <option value="">-- Select Gender --</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                </div>
+                <div class="col-md-9"> <!-- Adjusted width if gender takes 3 cols -->
                     <label for="class_section_id" class="form-label">Class Section:</label>
                     <select name="class_section_id" id="class_section_id" class="form-select" required>
                         <option value="">-- Select Class Section --</option>

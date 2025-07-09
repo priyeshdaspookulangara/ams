@@ -120,6 +120,7 @@ $sql_students_new = "CREATE TABLE IF NOT EXISTS students (
     roll_number VARCHAR(50) NOT NULL, -- Roll number might now be unique PER class_section, not globally
     class_section_id INT NULL, -- This student belongs to which specific class section
     date_of_birth DATE NULL,
+    gender VARCHAR(15) NULL COMMENT 'Gender (e.g., Male, Female, Other)',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- FOREIGN KEY (class_section_id) REFERENCES class_sections(id) ON DELETE SET NULL, -- If class section is deleted
     -- Consider UNIQUE KEY (roll_number, class_section_id) if roll numbers are per-class
@@ -128,6 +129,7 @@ $sql_students_new = "CREATE TABLE IF NOT EXISTS students (
 // Note: The foreign key from students to class_sections is added *after* class_sections table is created.
 
 $sql_alter_students_add_dob = "ALTER TABLE students ADD COLUMN date_of_birth DATE NULL AFTER class_section_id";
+$sql_alter_students_add_gender = "ALTER TABLE students ADD COLUMN gender VARCHAR(15) NULL COMMENT 'Gender (e.g., Male, Female, Other)' AFTER date_of_birth";
 
 $sql_teacher_delegations = "CREATE TABLE IF NOT EXISTS teacher_delegations (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -360,6 +362,23 @@ if ($res_dob_column && mysqli_num_rows($res_dob_column) == 0) {
     echo "'date_of_birth' column already exists in 'students' table.<br>";
 } else if (!$res_dob_column) {
     echo "Error checking for 'date_of_birth' column: " . mysqli_error($conn) . "<br>";
+}
+
+// Ensure 'gender' column exists in 'students' table
+$check_gender_column_sql = "SHOW COLUMNS FROM students LIKE 'gender'";
+$res_gender_column = mysqli_query($conn, $check_gender_column_sql);
+if ($res_gender_column && mysqli_num_rows($res_gender_column) == 0) {
+    echo "Attempting to add 'gender' column to 'students' table...<br>";
+    // $sql_alter_students_add_gender was defined earlier
+    if (mysqli_query($conn, $sql_alter_students_add_gender)) {
+        echo "'gender' column added successfully to 'students' table.<br>";
+    } else {
+        echo "Error adding 'gender' column to 'students' table: " . mysqli_error($conn) . "<br>";
+    }
+} else if ($res_gender_column && mysqli_num_rows($res_gender_column) > 0) {
+    echo "'gender' column already exists in 'students' table.<br>";
+} else if (!$res_gender_column) {
+    echo "Error checking for 'gender' column: " . mysqli_error($conn) . "<br>";
 }
 echo "<hr>";
 
